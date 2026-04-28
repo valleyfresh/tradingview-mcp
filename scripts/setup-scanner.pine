@@ -3,14 +3,15 @@ indicator("Swing Setup Scanner", overlay=true, max_labels_count=10, max_lines_co
 
 // ─── INPUTS ──────────────────────────────────────────────────────────────────
 i_ema_len       = input.int(20,   "EMA Length",             group="EMA", minval=1)
-i_ema_tf        = input.timeframe("D",   "EMA Timeframe",   group="EMA")
+i_ema_src       = input.source(close, "Source",             group="EMA")
+i_ema_tf        = input.timeframe("D", "EMA Timeframe",     group="EMA")
 i_min_ema_bars  = input.int(21,   "Min Bars Same Side",     group="EMA", minval=5,
                       tooltip="21 bars ≈ 3 trading days on 1h. Price must stay on one side of EMA this long.")
 i_bounce_pct    = input.float(5.0,"EMA Bounce Band %",      group="EMA", minval=0.5, step=0.5,
                       tooltip="Low (long) or High (short) must come within this % of EMA for a valid bounce.")
 
 i_atr_len       = input.int(14,   "ATR Length",             group="ATR", minval=1)
-i_atr_tf        = input.timeframe("240", "ATR Timeframe",   group="ATR")
+i_atr_smooth    = input.string("RMA", "Smoothing",          group="ATR", options=["RMA", "SMA", "EMA", "WMA"])
 
 i_piv_left      = input.int(5,    "Pivot Left Bars",        group="Trendline", minval=2)
 i_piv_right     = input.int(3,    "Pivot Right Bars",       group="Trendline", minval=1)
@@ -30,11 +31,19 @@ i_vol_lb        = input.int(5,    "Volume Lookback",        group="Volume", minv
 float wick_tol   = i_wick_tol_pct / 100.0
 float bounce_pct = i_bounce_pct   / 100.0
 
-// ─── MULTI-TIMEFRAME DATA ────────────────────────────────────────────────────
-float ema_val = request.security(syminfo.tickerid, i_ema_tf,
-                    ta.ema(close, i_ema_len), lookahead=barmerge.lookahead_off)
-float atr_4h  = request.security(syminfo.tickerid, i_atr_tf,
-                    ta.atr(i_atr_len), lookahead=barmerge.lookahead_off)
+// ─── INDICATORS ──────────────────────────────────────────────────────────────
+// gaps_off: forward-filled daily value, used for all logic (trend, bounce, etc.)
+float ema_val  = request.security(syminfo.tickerid, i_ema_tf, ta.ema(i_ema_src, i_ema_len), lookahead=barmerge.lookahead_off)
+// gaps_on: na between daily closes — plot() connects them with a straight line, matching the smooth appearance of the built-in EMA indicator
+float ema_plot = request.security(syminfo.tickerid, i_ema_tf, ta.ema(i_ema_src, i_ema_len), gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off)
+
+atr_ma(source, length) =>
+    switch i_atr_smooth
+        "RMA" => ta.rma(source, length)
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        =>       ta.wma(source, length)
+float atr_val = atr_ma(ta.tr(true), i_atr_len)
 
 // ─── EMA TREND FILTER ────────────────────────────────────────────────────────
 bool above_ema = close > ema_val
@@ -105,14 +114,10 @@ bool  mom_candle = (high - low) > 0.0 and math.abs(close - open) / (high - low) 
 
 // ─── TRENDLINE BASIC VALIDITY ────────────────────────────────────────────────
 // Long: two pivot highs forming a descending line spanning 3+ days
-bool long_piv_ok = not na(ph1) and not na(ph2) and not na(ph1b) and not na(ph2b)
-               and ph1 < ph2
-               and (ph1b - ph2b) >= i_min_tl_bars
+bool long_piv_ok = not na(ph1) and not na(ph2) and not na(ph1b) and not na(ph2b) and ph1 < ph2 and (ph1b - ph2b) >= i_min_tl_bars
 
 // Short: two pivot lows forming an ascending line spanning 3+ days
-bool short_piv_ok = not na(pl1) and not na(pl2) and not na(pl1b) and not na(pl2b)
-                and pl1 > pl2
-                and (pl1b - pl2b) >= i_min_tl_bars
+bool short_piv_ok = not na(pl1) and not na(pl2) and not na(pl1b) and not na(pl2b) and pl1 > pl2 and (pl1b - pl2b) >= i_min_tl_bars
 
 float long_slope  = long_piv_ok  ? (ph1 - ph2) / float(ph1b - ph2b) : na
 float short_slope = short_piv_ok ? (pl1 - pl2) / float(pl1b - pl2b) : na
@@ -241,7 +246,7 @@ var label short_lbl = na
 
 if long_setup
     string txt = "LONG|"  + grade + "|" + str.tostring(long_touches)  + "|"
-               + str.tostring(consec_above) + "|" + str.tostring(atr_4h, "#.####")
+               + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
     label.delete(long_lbl)
     long_lbl := label.new(bar_index, high * 1.001, txt,
          style     = label.style_label_down,
@@ -251,7 +256,7 @@ if long_setup
 
 if short_setup
     string txt = "SHORT|" + grade + "|" + str.tostring(short_touches) + "|"
-               + str.tostring(consec_below) + "|" + str.tostring(atr_4h, "#.####")
+               + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
     label.delete(short_lbl)
     short_lbl := label.new(bar_index, low * 0.999, txt,
          style     = label.style_label_up,
@@ -260,4 +265,4 @@ if short_setup
          size      = size.small)
 
 // ─── PLOTS ───────────────────────────────────────────────────────────────────
-plot(ema_val, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
+plot(ema_plot, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)

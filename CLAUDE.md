@@ -1,5 +1,8 @@
 # TradingView MCP — Claude Instructions
 
+> **Private fork** — built for swing trading US equities. Do not open PRs to upstream.
+> Read the **Project Status** section at the bottom before starting any session.
+
 68 tools for reading and controlling a live TradingView Desktop chart via CDP (port 9222).
 
 ## Decision Tree — Which Tool When
@@ -127,3 +130,55 @@ Claude Code ←→ MCP Server (stdio) ←→ CDP (localhost:9222) ←→ Trading
 ```
 
 Pine graphics path: `study._graphics._primitivesCollection.dwglines.get('lines').get(false)._primitivesDataById`
+
+---
+
+## Project Status
+
+### Owner & Goal
+Daryl Lee — swing/position trader, US equities, technical analysis. Building a private trading assistant on top of this MCP. Plans to migrate from WSL to an openclaw server.
+
+### Strategy (encoded in Pine Script)
+- **Timeframe:** 1h candles | **Trend filter:** Daily EMA 20 | **Stop sizing:** 4h ATR 14
+- **Entry signal:** Price breaks descending trendline (lower highs) after EMA bounce
+- **Trendline rules:** 2+ touch points on candle highs, no wicks above, 3+ days span
+- **EMA bounce:** Low within 5% of EMA + hammer or bullish engulfing
+- **Breakout filters:** Volume > 5-bar avg ×1.2 and/or body/range > 60%
+- **Risk:** 1–3% per trade | **Entry:** Last 10 min of 1h candle close
+- **Watchlist:** "SMA list" in TradingView (static, must be visible when scanning)
+
+### Custom Tools Added
+| Tool | Purpose |
+|------|---------|
+| `scanner_run_watchlist` | Scan "SMA list" for setups matching the strategy |
+| `market_sentiment_get` | CNN Fear & Greed index |
+| `earnings_get` | NASDAQ earnings calendar filtered to watchlist |
+| `news_get` | Yahoo Finance RSS headlines for setup candidates |
+
+### Custom Skills Added
+| Skill | When to use |
+|-------|------------|
+| `setup-scan` | Find trade setups across watchlist |
+| `morning-brief` | Full pre-market briefing |
+
+### Key Files
+- `scripts/setup-scanner.pine` — Pine Script indicator (saved to TV cloud as "Swing Setup Scanner")
+- `src/core/scanner.js` — Watchlist scan logic
+- `src/core/market.js` — External data (CNN, NASDAQ, Yahoo)
+- `skills/setup-scan/SKILL.md` — Scanner workflow
+- `skills/morning-brief/SKILL.md` — Morning brief workflow
+
+### Session Checklist
+Before starting any trading session:
+1. TradingView Desktop open, CDP on port 9222
+2. "SMA list" watchlist visible in right panel
+3. "Swing Setup Scanner" indicator loaded on 1h chart (`pine_open` → "Swing Setup Scanner" if not)
+4. Run `tv_health_check` to confirm connection
+
+### Pending Work
+1. Commit & push to fork (nothing committed yet)
+2. Live test `scanner_run_watchlist` across full SMA list
+3. Tune Pine Script thresholds after live testing
+4. Test morning brief end-to-end
+5. Backtest existing Pine strategies using `data_get_strategy_results`
+6. openclaw server migration (future)
