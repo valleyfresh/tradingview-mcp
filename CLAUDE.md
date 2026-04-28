@@ -160,6 +160,8 @@ Daryl Lee — swing/position trader, US equities, technical analysis. Building a
 |-------|------------|
 | `setup-scan` | Find trade setups across watchlist |
 | `morning-brief` | Full pre-market briefing |
+| `setup-scanner-qa` | Debug why a valid setup isn't firing; tune indicator thresholds; add new filters |
+| `tv-connect` | Establish or restore CDP connection to TradingView Desktop (especially from WSL2) |
 
 ### Key Files
 - `scripts/setup-scanner.pine` — Pine Script indicator (saved to TV cloud as "Swing Setup Scanner")
@@ -170,10 +172,10 @@ Daryl Lee — swing/position trader, US equities, technical analysis. Building a
 
 ### Session Checklist
 Before starting any trading session:
-1. TradingView Desktop open, CDP on port 9222
-2. "SMA list" watchlist visible in right panel
-3. "Swing Setup Scanner" indicator loaded on 1h chart (`pine_open` → "Swing Setup Scanner" if not)
-4. Run `tv_health_check` to confirm connection
+1. TradingView Desktop open with CDP enabled (`--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0` on Windows)
+2. Run `tv_health_check` — if it fails, invoke `tv-connect` skill
+3. "SMA list" watchlist visible in right panel
+4. "Swing Setup Scanner" indicator loaded on 1h chart (`pine_open` → "Swing Setup Scanner" if not)
 
 ### Pending Work
 1. Commit & push to fork (nothing committed yet)
