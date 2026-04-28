@@ -1,0 +1,263 @@
+//@version=6
+indicator("Swing Setup Scanner", overlay=true, max_labels_count=10, max_lines_count=5)
+
+// ─── INPUTS ──────────────────────────────────────────────────────────────────
+i_ema_len       = input.int(20,   "EMA Length",             group="EMA", minval=1)
+i_ema_tf        = input.timeframe("D",   "EMA Timeframe",   group="EMA")
+i_min_ema_bars  = input.int(21,   "Min Bars Same Side",     group="EMA", minval=5,
+                      tooltip="21 bars ≈ 3 trading days on 1h. Price must stay on one side of EMA this long.")
+i_bounce_pct    = input.float(5.0,"EMA Bounce Band %",      group="EMA", minval=0.5, step=0.5,
+                      tooltip="Low (long) or High (short) must come within this % of EMA for a valid bounce.")
+
+i_atr_len       = input.int(14,   "ATR Length",             group="ATR", minval=1)
+i_atr_tf        = input.timeframe("240", "ATR Timeframe",   group="ATR")
+
+i_piv_left      = input.int(5,    "Pivot Left Bars",        group="Trendline", minval=2)
+i_piv_right     = input.int(3,    "Pivot Right Bars",       group="Trendline", minval=1)
+i_min_tl_bars   = input.int(21,   "Min Trendline Span",     group="Trendline", minval=5,
+                      tooltip="Minimum bars between first and second pivot. 21 ≈ 3 days on 1h.")
+i_min_touches   = input.int(2,    "Min Touch Points",       group="Trendline", minval=2,
+                      tooltip="Minimum number of candle highs/lows touching the trendline.")
+i_wick_tol_pct  = input.float(0.3,"Wick Tolerance %",       group="Trendline", minval=0.0, step=0.1,
+                      tooltip="Allow highs/lows to exceed trendline by this % before disqualifying.")
+i_breakout_bars = input.int(3,    "Breakout Lookback Bars", group="Trendline", minval=1,
+                      tooltip="Detect a trendline breakout within this many bars of the last closed bar.")
+
+i_vol_lb        = input.int(5,    "Volume Lookback",        group="Volume", minval=2,
+                      tooltip="Compare current bar volume to average of this many prior bars.")
+
+// ─── DERIVED ─────────────────────────────────────────────────────────────────
+float wick_tol   = i_wick_tol_pct / 100.0
+float bounce_pct = i_bounce_pct   / 100.0
+
+// ─── MULTI-TIMEFRAME DATA ────────────────────────────────────────────────────
+float ema_val = request.security(syminfo.tickerid, i_ema_tf,
+                    ta.ema(close, i_ema_len), lookahead=barmerge.lookahead_off)
+float atr_4h  = request.security(syminfo.tickerid, i_atr_tf,
+                    ta.atr(i_atr_len), lookahead=barmerge.lookahead_off)
+
+// ─── EMA TREND FILTER ────────────────────────────────────────────────────────
+bool above_ema = close > ema_val
+
+var int consec_above = 0
+var int consec_below = 0
+consec_above := above_ema ? consec_above + 1 : 0
+consec_below := above_ema ? 0 : consec_below + 1
+
+// Count EMA crossings in the lookback window — too many = choppy
+int cross_count = 0
+for i = 1 to i_min_ema_bars - 1
+    if (close[i] > ema_val[i]) != (close[i + 1] > ema_val[i + 1])
+        cross_count += 1
+
+bool not_choppy   = cross_count <= 2
+bool in_uptrend   = consec_above >= i_min_ema_bars and not_choppy
+bool in_downtrend = consec_below >= i_min_ema_bars and not_choppy
+
+// ─── PIVOT DETECTION ─────────────────────────────────────────────────────────
+float raw_ph = ta.pivothigh(high, i_piv_left, i_piv_right)
+float raw_pl = ta.pivotlow(low,   i_piv_left, i_piv_right)
+
+// Most recent pivot highs (for LONG — descending trendline connecting lower highs)
+var float ph1  = na
+var int   ph1b = na
+var float ph2  = na
+var int   ph2b = na
+
+if not na(raw_ph)
+    ph2  := ph1
+    ph2b := ph1b
+    ph1  := raw_ph
+    ph1b := bar_index - i_piv_right
+
+// Most recent pivot lows (for SHORT — ascending trendline connecting higher lows)
+var float pl1  = na
+var int   pl1b = na
+var float pl2  = na
+var int   pl2b = na
+
+if not na(raw_pl)
+    pl2  := pl1
+    pl2b := pl1b
+    pl1  := raw_pl
+    pl1b := bar_index - i_piv_right
+
+// ─── EMA BOUNCE DETECTION ────────────────────────────────────────────────────
+// Bullish (LONG setup): low came within bounce_pct of EMA + hammer or bull engulfing
+bool low_near_ema   = low  >= ema_val * (1.0 - bounce_pct) and low  <= ema_val * (1.0 + bounce_pct)
+bool is_hammer      = (high - low) > 0.0 and (close - low) / (high - low + 0.0001) >= 0.6 and close > open
+bool is_bull_engulf = close > open and close > high[1] and open < close[1]
+bool bull_bounce    = low_near_ema and (is_hammer or is_bull_engulf)
+
+// Bearish (SHORT setup): high came within bounce_pct of EMA + shooting star or bear engulfing
+bool high_near_ema  = high >= ema_val * (1.0 - bounce_pct) and high <= ema_val * (1.0 + bounce_pct)
+bool is_star        = (high - low) > 0.0 and (high - close) / (high - low + 0.0001) >= 0.6 and close < open
+bool is_bear_engulf = close < open and close < low[1] and open > close[1]
+bool bear_bounce    = high_near_ema and (is_star or is_bear_engulf)
+
+int bsince_bull = ta.barssince(bull_bounce)
+int bsince_bear = ta.barssince(bear_bounce)
+
+// ─── VOLUME & MOMENTUM ───────────────────────────────────────────────────────
+float avg_vol   = ta.sma(volume, i_vol_lb + 1)
+bool  vol_spike  = volume > avg_vol * 1.2
+bool  mom_candle = (high - low) > 0.0 and math.abs(close - open) / (high - low) >= 0.6
+
+// ─── TRENDLINE BASIC VALIDITY ────────────────────────────────────────────────
+// Long: two pivot highs forming a descending line spanning 3+ days
+bool long_piv_ok = not na(ph1) and not na(ph2) and not na(ph1b) and not na(ph2b)
+               and ph1 < ph2
+               and (ph1b - ph2b) >= i_min_tl_bars
+
+// Short: two pivot lows forming an ascending line spanning 3+ days
+bool short_piv_ok = not na(pl1) and not na(pl2) and not na(pl1b) and not na(pl2b)
+                and pl1 > pl2
+                and (pl1b - pl2b) >= i_min_tl_bars
+
+float long_slope  = long_piv_ok  ? (ph1 - ph2) / float(ph1b - ph2b) : na
+float short_slope = short_piv_ok ? (pl1 - pl2) / float(pl1b - pl2b) : na
+
+// ─── HEAVY CHECKS (last bar only for performance) ────────────────────────────
+var bool long_no_wick    = false
+var bool short_no_wick   = false
+var int  long_touches    = 0
+var int  short_touches   = 0
+var bool long_bounce_ok  = false
+var bool short_bounce_ok = false
+var bool long_breakout   = false
+var bool short_breakout  = false
+
+if barstate.islast
+    // Reset all result flags
+    long_no_wick    := false
+    short_no_wick   := false
+    long_touches    := 0
+    short_touches   := 0
+    long_bounce_ok  := false
+    short_bounce_ok := false
+    long_breakout   := false
+    short_breakout  := false
+
+    // ── LONG trendline checks ──────────────────────────────────────────────
+    if long_piv_ok
+        long_no_wick := true
+        int p1off = bar_index - ph1b                           // bars ago: ph1
+        int p2off = math.min(bar_index - ph2b, p1off + 200)   // bars ago: ph2 (capped)
+
+        for i = p1off to p2off
+            float dist  = float(bar_index - i - ph1b)         // bars from ph1 to this bar
+            float tl    = ph1 + long_slope * dist
+            if tl > 0.0
+                if high[i] > tl * (1.0 + wick_tol)
+                    long_no_wick := false
+                if math.abs(high[i] - tl) / tl <= 0.003
+                    long_touches += 1
+
+        long_bounce_ok := not na(bsince_bull)
+                      and bsince_bull >= p1off
+                      and bsince_bull <= (bar_index - ph2b)
+
+        // Breakout: close crossed above trendline within i_breakout_bars
+        for i = 0 to i_breakout_bars - 1
+            float tl_i  = ph1 + long_slope * float(bar_index -     i - ph1b)
+            float tl_i1 = ph1 + long_slope * float(bar_index - i - 1 - ph1b)
+            if close[i] > tl_i and close[i + 1] <= tl_i1
+                long_breakout := true
+
+    // ── SHORT trendline checks ─────────────────────────────────────────────
+    if short_piv_ok
+        short_no_wick := true
+        int q1off = bar_index - pl1b
+        int q2off = math.min(bar_index - pl2b, q1off + 200)
+
+        for i = q1off to q2off
+            float dist  = float(bar_index - i - pl1b)
+            float tl    = pl1 + short_slope * dist
+            if tl > 0.0
+                if low[i] < tl * (1.0 - wick_tol)
+                    short_no_wick := false
+                if math.abs(low[i] - tl) / tl <= 0.003
+                    short_touches += 1
+
+        short_bounce_ok := not na(bsince_bear)
+                       and bsince_bear >= q1off
+                       and bsince_bear <= (bar_index - pl2b)
+
+        for i = 0 to i_breakout_bars - 1
+            float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
+            float tl_i1 = pl1 + short_slope * float(bar_index - i - 1 - pl1b)
+            if close[i] < tl_i and close[i + 1] >= tl_i1
+                short_breakout := true
+
+// ─── SETUP SIGNALS ───────────────────────────────────────────────────────────
+bool long_setup = barstate.islast
+             and in_uptrend
+             and long_piv_ok
+             and long_no_wick
+             and long_touches  >= i_min_touches
+             and long_bounce_ok
+             and long_breakout
+
+bool short_setup = barstate.islast
+              and in_downtrend
+              and short_piv_ok
+              and short_no_wick
+              and short_touches  >= i_min_touches
+              and short_bounce_ok
+              and short_breakout
+
+// ─── SETUP GRADE ─────────────────────────────────────────────────────────────
+string grade = "Moderate"
+if vol_spike and mom_candle
+    grade := "Ideal"
+else if vol_spike or mom_candle
+    grade := "Strong"
+
+// ─── VISUAL TRENDLINES ───────────────────────────────────────────────────────
+var line long_line  = na
+var line short_line = na
+
+if barstate.islast
+    if long_piv_ok and long_no_wick and long_touches >= i_min_touches and long_bounce_ok
+        float proj = ph1 + long_slope * float(bar_index + 5 - ph1b)
+        line.delete(long_line)
+        long_line := line.new(ph2b, ph2, bar_index + 5, proj,
+             color = long_breakout ? color.new(color.green, 0) : color.new(color.orange, 0),
+             width = 2)
+
+    if short_piv_ok and short_no_wick and short_touches >= i_min_touches and short_bounce_ok
+        float proj = pl1 + short_slope * float(bar_index + 5 - pl1b)
+        line.delete(short_line)
+        short_line := line.new(pl2b, pl2, bar_index + 5, proj,
+             color = short_breakout ? color.new(color.red, 0) : color.new(color.orange, 0),
+             width = 2)
+
+// ─── MACHINE-READABLE LABEL OUTPUT ───────────────────────────────────────────
+// Format: "DIRECTION|GRADE|TOUCHES|EMA_BARS|ATR"
+// Example: "LONG|Ideal|3|45|0.87"
+// Parsed by scanner_run_watchlist MCP tool.
+var label long_lbl  = na
+var label short_lbl = na
+
+if long_setup
+    string txt = "LONG|"  + grade + "|" + str.tostring(long_touches)  + "|"
+               + str.tostring(consec_above) + "|" + str.tostring(atr_4h, "#.####")
+    label.delete(long_lbl)
+    long_lbl := label.new(bar_index, high * 1.001, txt,
+         style     = label.style_label_down,
+         color     = color.new(color.green, 15),
+         textcolor = color.white,
+         size      = size.small)
+
+if short_setup
+    string txt = "SHORT|" + grade + "|" + str.tostring(short_touches) + "|"
+               + str.tostring(consec_below) + "|" + str.tostring(atr_4h, "#.####")
+    label.delete(short_lbl)
+    short_lbl := label.new(bar_index, low * 0.999, txt,
+         style     = label.style_label_up,
+         color     = color.new(color.red, 15),
+         textcolor = color.white,
+         size      = size.small)
+
+// ─── PLOTS ───────────────────────────────────────────────────────────────────
+plot(ema_val, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
