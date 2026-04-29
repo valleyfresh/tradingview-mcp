@@ -261,7 +261,8 @@ if barstate.islast
             float tl_i  = ph1 + long_slope * float(bar_index -     i - ph1b)
             float tl_i1 = ph1 + long_slope * float(bar_index - i - 1 - ph1b)
             if close[i] > tl_i and close[i + 1] <= tl_i1
-                long_breakout := true
+                long_breakout     := true
+                long_breakout_ago := i
 
     // ── SHORT trendline checks ─────────────────────────────────────────────
     if short_piv_ok
@@ -285,7 +286,8 @@ if barstate.islast
             float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
             float tl_i1 = pl1 + short_slope * float(bar_index - i - 1 - pl1b)
             if close[i] < tl_i and close[i + 1] >= tl_i1
-                short_breakout := true
+                short_breakout     := true
+                short_breakout_ago := i
 
 // ─── SETUP SIGNALS ───────────────────────────────────────────────────────────
 // Two-threshold design: i_min_tl_bars draws the line (blue = KIV), i_min_sig_bars
