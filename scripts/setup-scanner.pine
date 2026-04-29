@@ -93,6 +93,10 @@ if not na(raw_pl)
         array.pop(pl_prices)
         array.pop(pl_bars_a)
 
+// ─── BOUNCE PATTERN TRACKING ─────────────────────────────────────────────────
+var string last_bull_pattern  = "—"
+var string last_bear_pattern  = "—"
+
 // ─── EMA BOUNCE DETECTION ────────────────────────────────────────────────────
 // Bullish (LONG setup): low came within bounce_pct of EMA + hammer or bull engulfing
 bool low_near_ema   = low  >= ema_val * (1.0 - bounce_pct) and low  <= ema_val * (1.0 + bounce_pct)
@@ -105,6 +109,11 @@ bool high_near_ema  = high >= ema_val * (1.0 - bounce_pct) and high <= ema_val *
 bool is_star        = (high - low) > 0.0 and (high - close) / (high - low + 0.0001) >= 0.6 and close < open
 bool is_bear_engulf = close < open and close < low[1] and open > close[1]
 bool bear_bounce    = high_near_ema and (is_star or is_bear_engulf)
+
+if bull_bounce
+    last_bull_pattern := is_hammer ? "hammer" : "engulf"
+if bear_bounce
+    last_bear_pattern := is_star ? "star" : "engulf"
 
 int bsince_bull = ta.barssince(bull_bounce)
 int bsince_bear = ta.barssince(bear_bounce)
@@ -137,8 +146,6 @@ var bool  short_bounce_ok = false
 var bool  long_breakout  = false
 var bool  short_breakout = false
 
-var string last_bull_pattern  = "—"
-var string last_bear_pattern  = "—"
 var int    long_breakout_ago  = na
 var int    short_breakout_ago = na
 var string long_grade         = "—"
