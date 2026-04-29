@@ -166,6 +166,10 @@ if barstate.islast
     short_bounce_ok := false
     long_breakout   := false
     short_breakout  := false
+    long_breakout_ago  := na
+    short_breakout_ago := na
+    long_grade         := "—"
+    short_grade        := "—"
 
     // ── Find best descending pair of pivot highs (LONG setup) ──────────────
     // Slope adjustment: anchor at p2 (older pivot), scan intermediate bars, and lift
