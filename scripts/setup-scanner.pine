@@ -289,6 +289,21 @@ if barstate.islast
                 short_breakout     := true
                 short_breakout_ago := i
 
+    // ── Grade computation ──────────────────────────────────────────────────
+    if long_piv_ok
+        float tl_now     = ph1 + long_slope * float(bar_index - ph1b)
+        bool approaching = tl_now > 0.0 and close < tl_now and (tl_now - close) / tl_now <= 0.02
+        bool holding     = long_breakout and tl_now > 0.0 and close >= tl_now * 0.995
+        if last_bull_pattern != "—"
+            long_grade := (approaching or holding) ? "A" : "B"
+
+    if short_piv_ok
+        float tl_now     = pl1 + short_slope * float(bar_index - pl1b)
+        bool approaching = tl_now > 0.0 and close > tl_now and (close - tl_now) / tl_now <= 0.02
+        bool holding     = short_breakout and tl_now > 0.0 and close <= tl_now * 1.005
+        if last_bear_pattern != "—"
+            short_grade := (approaching or holding) ? "A" : "B"
+
 // ─── SETUP SIGNALS ───────────────────────────────────────────────────────────
 // Two-threshold design: i_min_tl_bars draws the line (blue = KIV), i_min_sig_bars
 // gates the signal label. Trendlines < signal span are visual only (not in scanner).
