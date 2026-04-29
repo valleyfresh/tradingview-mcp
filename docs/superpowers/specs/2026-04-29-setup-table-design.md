@@ -1,13 +1,13 @@
 # Setup Conditions Table — Design Spec
 
 **Date:** 2026-04-29
-**Feature:** Always-visible Pine Script table showing signal conditions for the active direction
+**Feature:** Always-visible Pine Script table showing signal conditions + setup grade for the active direction
 
 ---
 
 ## Goal
 
-Add a 3-column diagnostic table to `scripts/setup-scanner.pine` that shows the 4 signal conditions (Bounce EMA, Breakout, Volume, Momentum) for the current EMA side. The table is always visible so traders can KIV (Keep In View) stocks that are close to triggering a full setup.
+Add a 3-column diagnostic table to `scripts/setup-scanner.pine` that shows the 4 signal conditions (Bounce EMA, Breakout, Volume, Momentum) plus an A/B grade for the current EMA side. The table is always visible so traders can KIV (Keep In View) stocks that are close to triggering a full setup.
 
 ---
 
@@ -15,7 +15,7 @@ Add a 3-column diagnostic table to `scripts/setup-scanner.pine` that shows the 4
 
 ```
 ┌──────────────────────────────┐
-│  ▲ LONG  /  ▼ SHORT          │  ← header, green or red bg
+│  ▲ LONG  /  ▼ SHORT   [ A ]  │  ← header, green or red bg; grade right-aligned
 ├────────────────┬──────┬──────┤
 │ Bounce EMA     │  ✓   │hammer│
 │ Breakout       │  ✓   │1 bar │
@@ -64,6 +64,43 @@ Add a 3-column diagnostic table to `scripts/setup-scanner.pine` that shows the 4
 
 ---
 
+## Setup Grade (A/B/—)
+
+The grade appears right-aligned in the header row.
+
+### LONG grading logic
+| Grade | Criteria |
+|-------|----------|
+| **A** | `bull_bounce` confirmed in history AND (`long_breakout` is true AND close ≥ trendline) OR (close within 2% below current trendline price) |
+| **B** | `bull_bounce` confirmed but price has not yet approached or broken the trendline |
+| **—** | No `bull_bounce` in history — C omitted; stock not ready to KIV |
+
+### SHORT grading logic (mirror)
+| Grade | Criteria |
+|-------|----------|
+| **A** | `bear_bounce` confirmed AND (`short_breakout` true AND close ≤ trendline) OR (close within 2% above current trendline price) |
+| **B** | `bear_bounce` confirmed but price not yet approaching trendline |
+| **—** | No `bear_bounce` |
+
+### "Approaching trendline" definition
+- LONG: `(tl_current - close) / tl_current <= 0.02` where `tl_current` is the projected trendline price at `bar_index`
+- SHORT: `(close - tl_current) / tl_current <= 0.02`
+- Only evaluated when a valid trendline exists (`long_piv_ok` / `short_piv_ok`)
+- If no trendline exists, grade is **—**
+
+### "Holding after breakout" definition
+- LONG: `long_breakout` is true AND `close >= tl_current * (1 - 0.005)` (within 0.5% tolerance — allows minor pullback)
+- SHORT: `short_breakout` is true AND `close <= tl_current * (1 + 0.005)`
+
+### Grade cell styling
+| Grade | Background | Text |
+|-------|-----------|------|
+| A | `color.new(color.green, 10)` | white, bold |
+| B | `color.new(color.orange, 10)` | white |
+| — | header bg (no grade cell) | — |
+
+---
+
 ## Cell Styling
 
 | State | Background | Text |
@@ -86,4 +123,4 @@ Add a 3-column diagnostic table to `scripts/setup-scanner.pine` that shows the 4
 
 ## Files Changed
 
-- `scripts/setup-scanner.pine` — add table rendering block after the existing PLOTS section; add `var` state vars for `last_bounce_pattern`, `long_breakout_ago`, `short_breakout_ago`; update `max_tables_count` to 1 in the `indicator()` call.
+- `scripts/setup-scanner.pine` — add table rendering block after the existing PLOTS section; add `var` state vars for `last_bounce_pattern`, `long_breakout_ago`, `short_breakout_ago`; compute `tl_current` and grade logic inside `barstate.islast` block; update `max_tables_count` to 1 in the `indicator()` call.
