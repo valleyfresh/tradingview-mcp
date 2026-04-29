@@ -136,6 +136,7 @@ var bool  long_bounce_ok = false
 var bool  short_bounce_ok = false
 var bool  long_breakout  = false
 var bool  short_breakout = false
+
 var string last_bull_pattern  = "—"
 var string last_bear_pattern  = "—"
 var int    long_breakout_ago  = na
