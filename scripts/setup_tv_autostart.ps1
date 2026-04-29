@@ -1,16 +1,19 @@
 # setup_tv_autostart.ps1
 # Run once to configure TradingView to always launch with CDP enabled.
-# Creates a shortcut in the Windows Startup folder so it auto-starts on login.
+# Creates a Windows Task Scheduler task that auto-launches TV with CDP on every login.
+# Works with both regular installs and Microsoft Store (MSIX) installs.
 #
-# Usage (from WSL):
-#   ! powershell.exe -ExecutionPolicy Bypass -File /path/to/setup_tv_autostart.ps1
+# Usage (from WSL - copy to Windows Temp first):
+#   cp /path/to/setup_tv_autostart.ps1 /mnt/c/Windows/Temp/
+#   ! powershell.exe -ExecutionPolicy Bypass -File "C:\Windows\Temp\setup_tv_autostart.ps1"
 #
-# Usage (from Windows PowerShell):
-#   powershell.exe -ExecutionPolicy Bypass -File .\setup_tv_autostart.ps1
+# Options:
+#   -NoAutostart   skip creating the Task Scheduler entry (just relaunch now)
+#   -Port 9222     CDP port (default 9222)
 
 param(
     [int]$Port = 9222,
-    [switch]$NoAutostart   # pass -NoAutostart to skip adding to Startup folder
+    [switch]$NoAutostart
 )
 
 # ── Find TradingView.exe ──────────────────────────────────────────────────────
@@ -21,76 +24,74 @@ $candidates = @(
     "${env:PROGRAMFILES(x86)}\TradingView\TradingView.exe"
 )
 
-# Also search WindowsApps (MSIX store installs)
+# MSIX / Microsoft Store install
+$msixPkg = Get-AppxPackage | Where-Object { $_.Name -like "*TradingView*" } | Select-Object -First 1
+if ($msixPkg) {
+    $msixExe = Join-Path $msixPkg.InstallLocation "TradingView.exe"
+    if (Test-Path $msixExe) { $candidates = @($msixExe) + $candidates }
+}
+
+# Search WindowsApps (fallback)
 $storeExe = Get-ChildItem "$env:PROGRAMFILES\WindowsApps" -Filter "TradingView.exe" -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1 -ExpandProperty FullName
-
 if ($storeExe) { $candidates += $storeExe }
 
 # Try PATH
-$whereExe = (Get-Command TradingView.exe -ErrorAction SilentlyContinue)?.Source
-if ($whereExe) { $candidates += $whereExe }
+$whereCmd = Get-Command TradingView.exe -ErrorAction SilentlyContinue
+if ($whereCmd) { $candidates += $whereCmd.Source }
 
 $tvExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $tvExe) {
-    Write-Error "TradingView.exe not found. Searched: $($candidates -join ', ')"
+    Write-Error "TradingView.exe not found. Searched:`n$($candidates -join "`n")"
     Write-Host ""
-    Write-Host "If installed elsewhere, edit this script and add the path to `$candidates."
+    Write-Host "If installed elsewhere, add the path to the candidates list in this script."
     exit 1
 }
 
 Write-Host "Found TradingView at: $tvExe"
 
-$args = "--remote-debugging-port=$Port --remote-debugging-address=0.0.0.0"
+$cdpArgs = "--remote-debugging-port=$Port --remote-debugging-address=0.0.0.0"
 
-# ── Create Startup folder shortcut ───────────────────────────────────────────
+# ── Create Task Scheduler entry ───────────────────────────────────────────────
 if (-not $NoAutostart) {
-    $startupDir = [System.Environment]::GetFolderPath("Startup")
-    $shortcutPath = Join-Path $startupDir "TradingView (CDP).lnk"
+    $action    = New-ScheduledTaskAction -Execute $tvExe -Argument $cdpArgs
+    $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
+    $settings  = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew
 
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $tvExe
-    $shortcut.Arguments = $args
-    $shortcut.WorkingDirectory = Split-Path $tvExe
-    $shortcut.Description = "TradingView with CDP enabled for MCP"
-    $shortcut.Save()
+    Unregister-ScheduledTask -TaskName "TradingView CDP" -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName "TradingView CDP" -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings `
+        -Description "Launch TradingView with CDP enabled for MCP server" | Out-Null
 
-    Write-Host "Startup shortcut created: $shortcutPath"
-    Write-Host "TradingView will now auto-launch with CDP on every Windows login."
+    Write-Host "Task Scheduler entry created: 'TradingView CDP'"
+    Write-Host "TradingView will auto-launch with CDP on every Windows login."
 }
 
 # ── Kill existing TradingView and relaunch with CDP now ───────────────────────
 Write-Host ""
-Write-Host "Relaunching TradingView with CDP..."
+Write-Host "Relaunching TradingView with CDP on port $Port..."
 Stop-Process -Name "TradingView" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
-Start-Process -FilePath $tvExe -ArgumentList $args
+Start-Process -FilePath $tvExe -ArgumentList $cdpArgs
 
-# ── Wait for CDP to become available ─────────────────────────────────────────
-Write-Host "Waiting for CDP on port $Port..."
-$timeout = 30
-$elapsed = 0
+# ── Poll until CDP is ready ───────────────────────────────────────────────────
+Write-Host "Waiting for CDP..."
 $ready = $false
-while ($elapsed -lt $timeout) {
+for ($i = 1; $i -le 30; $i++) {
     Start-Sleep -Seconds 1
-    $elapsed++
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:$Port/json/version" -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
-        if ($response.StatusCode -eq 200) {
-            $ready = $true
-            break
-        }
+        $r = Invoke-WebRequest -Uri "http://localhost:$Port/json/version" -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $ready = $true; break }
     } catch {}
-    Write-Host "  ...waiting ($elapsed/$timeout)s"
+    Write-Host "  ...($i/30)s"
 }
 
 if ($ready) {
     Write-Host ""
-    Write-Host "CDP is ready at http://localhost:$Port"
-    Write-Host "MCP server can now connect."
+    Write-Host "CDP ready at http://localhost:$Port"
+    Write-Host "Run tv_health_check() in Claude Code to verify."
 } else {
-    Write-Warning "CDP did not become available within $timeout seconds."
-    Write-Host "TradingView may still be loading — try tv_health_check() in Claude Code."
+    Write-Host "TradingView still loading - run tv_health_check() in Claude Code shortly."
 }
