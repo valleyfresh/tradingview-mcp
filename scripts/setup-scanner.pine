@@ -96,6 +96,8 @@ if not na(raw_pl)
 // ─── BOUNCE PATTERN TRACKING ─────────────────────────────────────────────────
 var string last_bull_pattern  = "—"
 var string last_bear_pattern  = "—"
+var int    last_bull_bar      = na
+var int    last_bear_bar      = na
 
 // ─── EMA BOUNCE DETECTION ────────────────────────────────────────────────────
 // Bullish (LONG setup): low came within bounce_pct of EMA + hammer or bull engulfing
@@ -112,11 +114,18 @@ bool bear_bounce    = high_near_ema and (is_star or is_bear_engulf)
 
 if bull_bounce
     last_bull_pattern := is_hammer ? "hammer" : "engulf"
+    last_bull_bar     := bar_index
 if bear_bounce
     last_bear_pattern := is_star ? "star" : "engulf"
+    last_bear_bar     := bar_index
 
 int bsince_bull = ta.barssince(bull_bounce)
 int bsince_bear = ta.barssince(bear_bounce)
+
+// Highlight the EMA bounce candle (gated to active EMA side)
+barcolor(above_ema and bull_bounce ? color.new(color.lime, 50) :
+         not above_ema and bear_bounce ? color.new(color.red, 50) : na,
+         title="EMA Bounce")
 
 // ─── VOLUME & MOMENTUM ───────────────────────────────────────────────────────
 float avg_vol   = ta.sma(volume, i_vol_lb + 1)
@@ -178,66 +187,68 @@ if barstate.islast
     long_grade         := "—"
     short_grade        := "—"
 
-    // ── Find best descending pair of pivot highs (LONG setup) ──────────────
+    // ── Find best descending pair of pivot highs (LONG setup — above EMA only) ──
     // Slope adjustment: anchor at p2 (older pivot), scan intermediate bars, and lift
     // the slope to the minimum needed to stay above all candle highs. If the adjusted
     // slope goes positive (can't draw a descending line without cutting through), skip
     // the pair. This happens when any bar between the two pivots exceeds p2's high.
     // See scripts/DEVELOPMENT.md for full debugging guide.
-    int ph_n = array.size(ph_prices)
-    for i = 0 to ph_n - 2
-        if not long_piv_ok
-            float p1 = array.get(ph_prices, i)
-            int   b1 = array.get(ph_bars_a, i)
-            for j = i + 1 to ph_n - 1
-                if not long_piv_ok
-                    float p2 = array.get(ph_prices, j)
-                    int   b2 = array.get(ph_bars_a, j)
-                    if p1 < p2 and (b1 - b2) >= i_min_tl_bars
-                        float cand_slope = (p1 - p2) / float(b1 - b2)
-                        int   cs = bar_index - b1
-                        int   ce = math.min(bar_index - b2, cs + 200)
-                        for k = cs to ce
-                            float bfp2 = float(bar_index - k - b2)
-                            if bfp2 > 0
-                                float req = (high[k] - p2) / bfp2
-                                if req > cand_slope
-                                    cand_slope := req
-                        if cand_slope <= 0
-                            ph2        := p2
-                            ph2b       := b2
-                            ph1b       := b1
-                            ph1        := p2 + cand_slope * float(b1 - b2)
-                            long_slope := cand_slope
-                            long_piv_ok := true
+    if consec_above >= 1
+        int ph_n = array.size(ph_prices)
+        for i = 0 to ph_n - 2
+            if not long_piv_ok
+                float p1 = array.get(ph_prices, i)
+                int   b1 = array.get(ph_bars_a, i)
+                for j = i + 1 to ph_n - 1
+                    if not long_piv_ok
+                        float p2 = array.get(ph_prices, j)
+                        int   b2 = array.get(ph_bars_a, j)
+                        if p1 < p2 and (b1 - b2) >= i_min_tl_bars
+                            float cand_slope = (p1 - p2) / float(b1 - b2)
+                            int   cs = bar_index - b1
+                            int   ce = math.min(bar_index - b2, cs + 200)
+                            for k = cs to ce
+                                float bfp2 = float(bar_index - k - b2)
+                                if bfp2 > 0
+                                    float req = (high[k] - p2) / bfp2
+                                    if req > cand_slope
+                                        cand_slope := req
+                            if cand_slope <= 0
+                                ph2        := p2
+                                ph2b       := b2
+                                ph1b       := b1
+                                ph1        := p2 + cand_slope * float(b1 - b2)
+                                long_slope := cand_slope
+                                long_piv_ok := true
 
-    // ── Find best ascending pair of pivot lows (SHORT setup) ───────────────
-    int pl_n = array.size(pl_prices)
-    for i = 0 to pl_n - 2
-        if not short_piv_ok
-            float p1 = array.get(pl_prices, i)
-            int   b1 = array.get(pl_bars_a, i)
-            for j = i + 1 to pl_n - 1
-                if not short_piv_ok
-                    float p2 = array.get(pl_prices, j)
-                    int   b2 = array.get(pl_bars_a, j)
-                    if p1 > p2 and (b1 - b2) >= i_min_tl_bars
-                        float cand_slope = (p1 - p2) / float(b1 - b2)
-                        int   cs = bar_index - b1
-                        int   ce = math.min(bar_index - b2, cs + 200)
-                        for k = cs to ce
-                            float bfp2 = float(bar_index - k - b2)
-                            if bfp2 > 0
-                                float req = (low[k] - p2) / bfp2
-                                if req < cand_slope
-                                    cand_slope := req
-                        if cand_slope >= 0
-                            pl2         := p2
-                            pl2b        := b2
-                            pl1b        := b1
-                            pl1         := p2 + cand_slope * float(b1 - b2)
-                            short_slope := cand_slope
-                            short_piv_ok := true
+    // ── Find best ascending pair of pivot lows (SHORT setup — below EMA only) ──
+    if consec_above == 0
+        int pl_n = array.size(pl_prices)
+        for i = 0 to pl_n - 2
+            if not short_piv_ok
+                float p1 = array.get(pl_prices, i)
+                int   b1 = array.get(pl_bars_a, i)
+                for j = i + 1 to pl_n - 1
+                    if not short_piv_ok
+                        float p2 = array.get(pl_prices, j)
+                        int   b2 = array.get(pl_bars_a, j)
+                        if p1 > p2 and (b1 - b2) >= i_min_tl_bars
+                            float cand_slope = (p1 - p2) / float(b1 - b2)
+                            int   cs = bar_index - b1
+                            int   ce = math.min(bar_index - b2, cs + 200)
+                            for k = cs to ce
+                                float bfp2 = float(bar_index - k - b2)
+                                if bfp2 > 0
+                                    float req = (low[k] - p2) / bfp2
+                                    if req < cand_slope
+                                        cand_slope := req
+                            if cand_slope >= 0
+                                pl2         := p2
+                                pl2b        := b2
+                                pl1b        := b1
+                                pl1         := p2 + cand_slope * float(b1 - b2)
+                                short_slope := cand_slope
+                                short_piv_ok := true
 
     // ── LONG trendline checks ──────────────────────────────────────────────
     if long_piv_ok
@@ -292,16 +303,18 @@ if barstate.islast
     // ── Grade computation ──────────────────────────────────────────────────
     if long_piv_ok
         float tl_now     = ph1 + long_slope * float(bar_index - ph1b)
+        bool bounce_ok   = last_bull_pattern != "—" and not na(last_bull_bar) and last_bull_bar >= ph2b
         bool approaching = tl_now > 0.0 and close < tl_now and (tl_now - close) / tl_now <= 0.02
         bool holding     = long_breakout and tl_now > 0.0 and close >= tl_now * 0.995
-        if last_bull_pattern != "—"
+        if bounce_ok
             long_grade := (approaching or holding) ? "A" : "B"
 
     if short_piv_ok
         float tl_now     = pl1 + short_slope * float(bar_index - pl1b)
+        bool bounce_ok   = last_bear_pattern != "—" and not na(last_bear_bar) and last_bear_bar >= pl2b
         bool approaching = tl_now > 0.0 and close > tl_now and (close - tl_now) / tl_now <= 0.02
         bool holding     = short_breakout and tl_now > 0.0 and close <= tl_now * 1.005
-        if last_bear_pattern != "—"
+        if bounce_ok
             short_grade := (approaching or holding) ? "A" : "B"
 
 // ─── SETUP SIGNALS ───────────────────────────────────────────────────────────
@@ -338,24 +351,23 @@ var line long_line  = na
 var line short_line = na
 
 if barstate.islast
-    // LONG trendline: blue = developing (< signal span), orange = ready, green = breakout
+    // LONG trendline (above EMA): blue = developing (< signal span), orange = ready, green = breakout
     if long_piv_ok and long_no_wick and long_touches >= i_min_touches
         color tl_col = long_breakout     ? color.new(color.green, 0)
                      : long_span_ok      ? color.new(color.orange, 0)
                      :                     color.new(color.blue, 40)
-        float proj = ph1 + long_slope * float(bar_index + 5 - ph1b)
+        float proj = ph1 + long_slope * float(bar_index + 30 - ph1b)
         line.delete(long_line)
-        long_line := line.new(ph2b, ph2, bar_index + 5, proj, color=tl_col, width=2)
+        long_line := line.new(ph2b, ph2, bar_index + 30, proj, color=tl_col, width=2)
 
-    // SHORT trendline: only draw when price is in downtrend (below EMA).
-    // Blue = developing (< signal span), orange = ready, red = breakout.
-    if short_piv_ok and short_no_wick and short_touches >= i_min_touches and in_downtrend
+    // SHORT trendline (below EMA): blue = developing, orange = ready, red = breakout
+    if short_piv_ok and short_no_wick and short_touches >= i_min_touches
         color tl_col = short_breakout    ? color.new(color.red, 0)
                      : short_span_ok     ? color.new(color.orange, 0)
                      :                     color.new(color.blue, 40)
-        float proj = pl1 + short_slope * float(bar_index + 5 - pl1b)
+        float proj = pl1 + short_slope * float(bar_index + 30 - pl1b)
         line.delete(short_line)
-        short_line := line.new(pl2b, pl2, bar_index + 5, proj, color=tl_col, width=2)
+        short_line := line.new(pl2b, pl2, bar_index + 30, proj, color=tl_col, width=2)
 
 // ─── MACHINE-READABLE LABEL OUTPUT ───────────────────────────────────────────
 // Format: "DIRECTION|GRADE|TOUCHES|EMA_BARS|ATR"
@@ -388,75 +400,93 @@ if short_setup
 plot(ema_plot, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
 
 // ─── SETUP CONDITIONS TABLE ──────────────────────────────────────────────────
-var table setup_tbl = table.new(position.top_right, 3, 5,
-     bgcolor      = color.new(color.gray, 85),
-     border_color = color.new(color.gray, 60),
-     border_width = 1,
-     frame_color  = color.new(color.gray, 40),
-     frame_width  = 1)
+var table setup_tbl = na
 
 if barstate.islast
-    bool   is_long  = consec_above >= 1
+    bool is_long     = consec_above >= 1
+    bool setup_valid = (is_long and long_piv_ok) or (not is_long and short_piv_ok)
 
-    // Condition values
-    bool   c_bounce = is_long ? (last_bull_pattern != "—") : (last_bear_pattern != "—")
-    string d_bounce = is_long ? last_bull_pattern : last_bear_pattern
+    if not setup_valid
+        if not na(setup_tbl)
+            table.delete(setup_tbl)
+            setup_tbl := na
+    else
+        // Bounce valid only if it falls within the trendline's time span
+        bool bounce_ok_l = last_bull_pattern != "—" and not na(last_bull_bar) and last_bull_bar >= ph2b
+        bool bounce_ok_s = last_bear_pattern != "—" and not na(last_bear_bar) and last_bear_bar >= pl2b
+        bool   c_bounce  = is_long ? bounce_ok_l : bounce_ok_s
+        string d_bounce  = is_long ? last_bull_pattern : last_bear_pattern
 
-    bool   c_break  = is_long ? long_breakout : short_breakout
-    int    b_ago    = is_long ? long_breakout_ago : short_breakout_ago
-    string d_break  = not c_break ? "—" : (na(b_ago) or b_ago == 0) ? "now" : str.tostring(b_ago) + "b"
+        bool   c_break = is_long ? long_breakout : short_breakout
+        int    b_ago   = is_long ? long_breakout_ago : short_breakout_ago
+        string d_break = not c_break ? "—" : (na(b_ago) or b_ago == 0) ? "now" : str.tostring(b_ago) + "b"
 
-    int    vol_pct  = math.round((volume / avg_vol - 1) * 100)
-    string d_vol    = (vol_pct >= 0 ? "+" : "") + str.tostring(vol_pct) + "%"
+        // Volume and momentum evaluated on the breakout candle
+        bool   c_vol    = c_break and not na(b_ago) and volume[b_ago] > avg_vol[b_ago] * 1.2
+        int    vol_pct  = (c_break and not na(b_ago)) ? math.round((volume[b_ago] / avg_vol[b_ago] - 1) * 100) : 0
+        string d_vol    = c_break ? ((vol_pct >= 0 ? "+" : "") + str.tostring(vol_pct) + "%") : "—"
 
-    int    body_pct = (high - low) > 0.0 ? math.round(math.abs(close - open) / (high - low) * 100) : 0
-    string d_mom    = str.tostring(body_pct) + "%"
+        float  bo_range = (c_break and not na(b_ago)) ? (high[b_ago] - low[b_ago]) : 0.0
+        float  bo_body  = (c_break and not na(b_ago)) ? math.abs(close[b_ago] - open[b_ago]) : 0.0
+        bool   c_mom    = c_break and bo_range > 0.0 and bo_body / bo_range >= 0.6
+        int    body_pct = bo_range > 0.0 ? math.round(bo_body / bo_range * 100) : 0
+        string d_mom    = c_break ? str.tostring(body_pct) + "%" : "—"
 
-    string tbl_grade = is_long ? long_grade : short_grade
-    string dir_txt   = is_long ? "▲ LONG" : "▼ SHORT"
-    color  hdr_bg    = is_long ? color.new(color.green, 10) : color.new(color.red, 10)
-    color  grade_bg  = tbl_grade == "A" ? color.new(color.green, 10) :
-                       tbl_grade == "B" ? color.new(color.orange, 10) : hdr_bg
-    color  c_met    = color.new(color.green, 20)
-    color  c_nmet   = color.new(color.red,   20)
-    color  c_det    = color.new(color.gray,  70)
+        string tbl_grade = is_long ? long_grade : short_grade
+        string dir_txt   = is_long ? "▲ LONG" : "▼ SHORT"
+        color  hdr_bg    = is_long ? color.new(color.green, 10) : color.new(color.red, 10)
+        color  grade_bg  = tbl_grade == "A" ? color.new(color.green, 10) :
+                           tbl_grade == "B" ? color.new(color.orange, 10) : hdr_bg
+        color  c_met    = color.new(color.green, 20)
+        color  c_nmet   = color.new(color.red,   20)
+        color  c_det    = color.new(color.gray,  70)
 
-    // Header row
-    table.cell(setup_tbl, 0, 0, dir_txt,
-         text_color=color.white, bgcolor=hdr_bg, text_size=size.small, text_halign=text.align_left)
-    table.cell(setup_tbl, 1, 0, "",
-         text_color=color.white, bgcolor=hdr_bg, text_size=size.small)
-    table.cell(setup_tbl, 2, 0, tbl_grade != "—" ? "[" + tbl_grade + "]" : "",
-         text_color=color.white, bgcolor=grade_bg, text_size=size.small, text_halign=text.align_right)
+        // Recreate table with row count matching current state (3 rows = no breakout, 5 = breakout)
+        if not na(setup_tbl)
+            table.delete(setup_tbl)
+        setup_tbl := table.new(position.top_right, 3, c_break ? 5 : 3,
+             bgcolor      = color.new(color.gray, 85),
+             border_color = color.new(color.gray, 60),
+             border_width = 1,
+             frame_color  = color.new(color.gray, 40),
+             frame_width  = 1)
 
-    // Row 1 — Bounce EMA
-    table.cell(setup_tbl, 0, 1, "Bounce EMA",
-         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
-    table.cell(setup_tbl, 1, 1, c_bounce ? "✓" : "✗",
-         text_color=color.white, bgcolor=c_bounce ? c_met : c_nmet, text_size=size.small)
-    table.cell(setup_tbl, 2, 1, d_bounce,
-         text_color=color.white, bgcolor=c_det, text_size=size.small)
+        // Header row
+        table.cell(setup_tbl, 0, 0, dir_txt,
+             text_color=color.white, bgcolor=hdr_bg, text_size=size.small, text_halign=text.align_left)
+        table.cell(setup_tbl, 1, 0, "",
+             text_color=color.white, bgcolor=hdr_bg, text_size=size.small)
+        table.cell(setup_tbl, 2, 0, tbl_grade != "—" ? "[" + tbl_grade + "]" : "",
+             text_color=color.white, bgcolor=grade_bg, text_size=size.small, text_halign=text.align_right)
 
-    // Row 2 — Breakout
-    table.cell(setup_tbl, 0, 2, "Breakout",
-         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
-    table.cell(setup_tbl, 1, 2, c_break ? "✓" : "✗",
-         text_color=color.white, bgcolor=c_break ? c_met : c_nmet, text_size=size.small)
-    table.cell(setup_tbl, 2, 2, d_break,
-         text_color=color.white, bgcolor=c_det, text_size=size.small)
+        // Row 1 — Bounce EMA
+        table.cell(setup_tbl, 0, 1, "Bounce EMA",
+             text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+        table.cell(setup_tbl, 1, 1, c_bounce ? "✓" : "✗",
+             text_color=color.white, bgcolor=c_bounce ? c_met : c_nmet, text_size=size.small)
+        table.cell(setup_tbl, 2, 1, d_bounce,
+             text_color=color.white, bgcolor=c_det, text_size=size.small)
 
-    // Row 3 — Volume
-    table.cell(setup_tbl, 0, 3, "Volume",
-         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
-    table.cell(setup_tbl, 1, 3, vol_spike ? "✓" : "✗",
-         text_color=color.white, bgcolor=vol_spike ? c_met : c_nmet, text_size=size.small)
-    table.cell(setup_tbl, 2, 3, d_vol,
-         text_color=color.white, bgcolor=c_det, text_size=size.small)
+        // Row 2 — Breakout
+        table.cell(setup_tbl, 0, 2, "Breakout",
+             text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+        table.cell(setup_tbl, 1, 2, c_break ? "✓" : "✗",
+             text_color=color.white, bgcolor=c_break ? c_met : c_nmet, text_size=size.small)
+        table.cell(setup_tbl, 2, 2, d_break,
+             text_color=color.white, bgcolor=c_det, text_size=size.small)
 
-    // Row 4 — Momentum
-    table.cell(setup_tbl, 0, 4, "Momentum",
-         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
-    table.cell(setup_tbl, 1, 4, mom_candle ? "✓" : "✗",
-         text_color=color.white, bgcolor=mom_candle ? c_met : c_nmet, text_size=size.small)
-    table.cell(setup_tbl, 2, 4, d_mom,
-         text_color=color.white, bgcolor=c_det, text_size=size.small)
+        // Rows 3-4 — Volume and Momentum (only when breakout detected)
+        if c_break
+            table.cell(setup_tbl, 0, 3, "Volume",
+                 text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+            table.cell(setup_tbl, 1, 3, c_vol ? "✓" : "✗",
+                 text_color=color.white, bgcolor=c_vol ? c_met : c_nmet, text_size=size.small)
+            table.cell(setup_tbl, 2, 3, d_vol,
+                 text_color=color.white, bgcolor=c_det, text_size=size.small)
+
+            table.cell(setup_tbl, 0, 4, "Momentum",
+                 text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+            table.cell(setup_tbl, 1, 4, c_mom ? "✓" : "✗",
+                 text_color=color.white, bgcolor=c_mom ? c_met : c_nmet, text_size=size.small)
+            table.cell(setup_tbl, 2, 4, d_mom,
+                 text_color=color.white, bgcolor=c_det, text_size=size.small)
