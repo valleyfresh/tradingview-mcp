@@ -1,5 +1,5 @@
 //@version=6
-indicator("Swing Setup Scanner", overlay=true, max_labels_count=10, max_lines_count=5)
+indicator("Swing Setup Scanner", overlay=true, max_labels_count=10, max_lines_count=5, max_boxes_count=2)
 
 // ─── INPUTS ──────────────────────────────────────────────────────────────────
 i_ema_len       = input.int(20,   "EMA Length",             group="EMA", minval=1)
@@ -122,10 +122,7 @@ if bear_bounce
 int bsince_bull = ta.barssince(bull_bounce)
 int bsince_bear = ta.barssince(bear_bounce)
 
-// Highlight the EMA bounce candle (gated to active EMA side)
-barcolor(above_ema and bull_bounce ? color.new(color.lime, 50) :
-         not above_ema and bear_bounce ? color.new(color.red, 50) : na,
-         title="EMA Bounce")
+// (Bounce candle highlight drawn from barstate.islast — see below)
 
 // ─── VOLUME & MOMENTUM ───────────────────────────────────────────────────────
 float avg_vol   = ta.sma(volume, i_vol_lb + 1)
@@ -268,12 +265,14 @@ if barstate.islast
         // Bounce must happen AFTER ph1 (trendline forms first, then EMA bounce, then breakout)
         long_bounce_ok := not na(bsince_bull) and bsince_bull < (bar_index - ph1b)
 
-        for i = 0 to i_breakout_bars - 1
+        // Scan full trendline span for the first (oldest) bar that crossed above
+        int long_scan = math.min(bar_index - ph1b, 200)
+        for i = 0 to long_scan
             float tl_i  = ph1 + long_slope * float(bar_index -     i - ph1b)
             float tl_i1 = ph1 + long_slope * float(bar_index - i - 1 - ph1b)
             if close[i] > tl_i and close[i + 1] <= tl_i1
                 long_breakout     := true
-                long_breakout_ago := i
+                long_breakout_ago := i  // last write wins → oldest crossing stored
 
     // ── SHORT trendline checks ─────────────────────────────────────────────
     if short_piv_ok
@@ -293,7 +292,8 @@ if barstate.islast
         // Bounce must happen AFTER pl1
         short_bounce_ok := not na(bsince_bear) and bsince_bear < (bar_index - pl1b)
 
-        for i = 0 to i_breakout_bars - 1
+        int short_scan = math.min(bar_index - pl1b, 200)
+        for i = 0 to short_scan
             float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
             float tl_i1 = pl1 + short_slope * float(bar_index - i - 1 - pl1b)
             if close[i] < tl_i and close[i + 1] >= tl_i1
@@ -346,9 +346,10 @@ if vol_spike and mom_candle
 else if vol_spike or mom_candle
     grade := "Strong"
 
-// ─── VISUAL TRENDLINES ───────────────────────────────────────────────────────
+// ─── VISUAL TRENDLINES + BOUNCE HIGHLIGHT ────────────────────────────────────
 var line long_line  = na
 var line short_line = na
+var box  bounce_box = na
 
 if barstate.islast
     // LONG trendline (above EMA): blue = developing (< signal span), orange = ready, green = breakout
@@ -368,6 +369,18 @@ if barstate.islast
         float proj = pl1 + short_slope * float(bar_index + 30 - pl1b)
         line.delete(short_line)
         short_line := line.new(pl2b, pl2, bar_index + 30, proj, color=tl_col, width=2)
+
+    // Highlight only the most recent EMA bounce candle
+    box.delete(bounce_box)
+    bounce_box := na
+    if above_ema and not na(last_bull_bar)
+        int off = bar_index - last_bull_bar
+        bounce_box := box.new(last_bull_bar, high[off], last_bull_bar + 1, low[off],
+             bgcolor=color.new(color.lime, 60), border_color=color.new(color.lime, 20), border_width=1)
+    else if not above_ema and not na(last_bear_bar)
+        int off = bar_index - last_bear_bar
+        bounce_box := box.new(last_bear_bar, high[off], last_bear_bar + 1, low[off],
+             bgcolor=color.new(color.red, 60), border_color=color.new(color.red, 20), border_width=1)
 
 // ─── MACHINE-READABLE LABEL OUTPUT ───────────────────────────────────────────
 // Format: "DIRECTION|GRADE|TOUCHES|EMA_BARS|ATR"
