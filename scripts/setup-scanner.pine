@@ -250,6 +250,7 @@ if barstate.islast
     // ── LONG trendline checks ──────────────────────────────────────────────
     if long_piv_ok
         long_no_wick := true
+        bool long_ema_clean = true
         int p1off = bar_index - ph1b
         int p2off = math.min(bar_index - ph2b, p1off + 200)
 
@@ -261,22 +262,29 @@ if barstate.islast
                     long_no_wick := false
                 if math.abs(high[i] - tl) / tl <= 0.01
                     long_touches += 1
+            // Reject trendline if any candle in span dips more than 1% below EMA
+            if close[i] < ema_val[i] * 0.99
+                long_ema_clean := false
 
-        // Bounce must happen AFTER ph1 (trendline forms first, then EMA bounce, then breakout)
-        long_bounce_ok := not na(bsince_bull) and bsince_bull < (bar_index - ph1b)
+        if not long_ema_clean
+            long_piv_ok := false
+        else
+            // Bounce must happen AFTER ph1 (trendline forms first, then EMA bounce, then breakout)
+            long_bounce_ok := not na(bsince_bull) and bsince_bull < (bar_index - ph1b)
 
-        // Scan full trendline span for the first (oldest) bar that crossed above
-        int long_scan = math.min(bar_index - ph1b, 200)
-        for i = 0 to long_scan
-            float tl_i  = ph1 + long_slope * float(bar_index -     i - ph1b)
-            float tl_i1 = ph1 + long_slope * float(bar_index - i - 1 - ph1b)
-            if close[i] > tl_i and close[i + 1] <= tl_i1
-                long_breakout     := true
-                long_breakout_ago := i  // last write wins → oldest crossing stored
+            // Scan full trendline span for the first (oldest) bar that crossed above
+            int long_scan = math.min(bar_index - ph1b, 200)
+            for i = 0 to long_scan
+                float tl_i  = ph1 + long_slope * float(bar_index -     i - ph1b)
+                float tl_i1 = ph1 + long_slope * float(bar_index - i - 1 - ph1b)
+                if close[i] > tl_i and close[i + 1] <= tl_i1
+                    long_breakout     := true
+                    long_breakout_ago := i  // last write wins → oldest crossing stored
 
     // ── SHORT trendline checks ─────────────────────────────────────────────
     if short_piv_ok
         short_no_wick := true
+        bool short_ema_clean = true
         int q1off = bar_index - pl1b
         int q2off = math.min(bar_index - pl2b, q1off + 200)
 
@@ -288,17 +296,23 @@ if barstate.islast
                     short_no_wick := false
                 if math.abs(low[i] - tl) / tl <= 0.01
                     short_touches += 1
+            // Reject trendline if any candle in span rises more than 1% above EMA
+            if close[i] > ema_val[i] * 1.01
+                short_ema_clean := false
 
-        // Bounce must happen AFTER pl1
-        short_bounce_ok := not na(bsince_bear) and bsince_bear < (bar_index - pl1b)
+        if not short_ema_clean
+            short_piv_ok := false
+        else
+            // Bounce must happen AFTER pl1
+            short_bounce_ok := not na(bsince_bear) and bsince_bear < (bar_index - pl1b)
 
-        int short_scan = math.min(bar_index - pl1b, 200)
-        for i = 0 to short_scan
-            float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
-            float tl_i1 = pl1 + short_slope * float(bar_index - i - 1 - pl1b)
-            if close[i] < tl_i and close[i + 1] >= tl_i1
-                short_breakout     := true
-                short_breakout_ago := i
+            int short_scan = math.min(bar_index - pl1b, 200)
+            for i = 0 to short_scan
+                float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
+                float tl_i1 = pl1 + short_slope * float(bar_index - i - 1 - pl1b)
+                if close[i] < tl_i and close[i + 1] >= tl_i1
+                    short_breakout     := true
+                    short_breakout_ago := i
 
     // ── Grade computation ──────────────────────────────────────────────────
     if long_piv_ok
