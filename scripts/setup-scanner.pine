@@ -386,3 +386,77 @@ if short_setup
 
 // ─── PLOTS ───────────────────────────────────────────────────────────────────
 plot(ema_plot, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
+
+// ─── SETUP CONDITIONS TABLE ──────────────────────────────────────────────────
+var table setup_tbl = table.new(position.top_right, 3, 5,
+     bgcolor      = color.new(color.gray, 85),
+     border_color = color.new(color.gray, 60),
+     border_width = 1,
+     frame_color  = color.new(color.gray, 40),
+     frame_width  = 1)
+
+if barstate.islast
+    bool   is_long  = consec_above >= 1
+
+    // Condition values
+    bool   c_bounce = is_long ? (last_bull_pattern != "—") : (last_bear_pattern != "—")
+    string d_bounce = is_long ? last_bull_pattern : last_bear_pattern
+
+    bool   c_break  = is_long ? long_breakout : short_breakout
+    int    b_ago    = is_long ? long_breakout_ago : short_breakout_ago
+    string d_break  = not c_break ? "—" : (na(b_ago) or b_ago == 0) ? "now" : str.tostring(b_ago) + "b"
+
+    int    vol_pct  = math.round((volume / avg_vol - 1) * 100)
+    string d_vol    = (vol_pct >= 0 ? "+" : "") + str.tostring(vol_pct) + "%"
+
+    int    body_pct = (high - low) > 0.0 ? math.round(math.abs(close - open) / (high - low) * 100) : 0
+    string d_mom    = str.tostring(body_pct) + "%"
+
+    string tbl_grade = is_long ? long_grade : short_grade
+    string dir_txt   = is_long ? "▲ LONG" : "▼ SHORT"
+    color  hdr_bg    = is_long ? color.new(color.green, 10) : color.new(color.red, 10)
+    color  grade_bg  = tbl_grade == "A" ? color.new(color.green, 10) :
+                       tbl_grade == "B" ? color.new(color.orange, 10) : hdr_bg
+    color  c_met    = color.new(color.green, 20)
+    color  c_nmet   = color.new(color.red,   20)
+    color  c_det    = color.new(color.gray,  70)
+
+    // Header row
+    table.cell(setup_tbl, 0, 0, dir_txt,
+         text_color=color.white, bgcolor=hdr_bg, text_size=size.small, text_halign=text.align_left)
+    table.cell(setup_tbl, 1, 0, "",
+         text_color=color.white, bgcolor=hdr_bg, text_size=size.small)
+    table.cell(setup_tbl, 2, 0, tbl_grade != "—" ? "[" + tbl_grade + "]" : "",
+         text_color=color.white, bgcolor=grade_bg, text_size=size.small, text_halign=text.align_right)
+
+    // Row 1 — Bounce EMA
+    table.cell(setup_tbl, 0, 1, "Bounce EMA",
+         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+    table.cell(setup_tbl, 1, 1, c_bounce ? "✓" : "✗",
+         text_color=color.white, bgcolor=c_bounce ? c_met : c_nmet, text_size=size.small)
+    table.cell(setup_tbl, 2, 1, d_bounce,
+         text_color=color.white, bgcolor=c_det, text_size=size.small)
+
+    // Row 2 — Breakout
+    table.cell(setup_tbl, 0, 2, "Breakout",
+         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+    table.cell(setup_tbl, 1, 2, c_break ? "✓" : "✗",
+         text_color=color.white, bgcolor=c_break ? c_met : c_nmet, text_size=size.small)
+    table.cell(setup_tbl, 2, 2, d_break,
+         text_color=color.white, bgcolor=c_det, text_size=size.small)
+
+    // Row 3 — Volume
+    table.cell(setup_tbl, 0, 3, "Volume",
+         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+    table.cell(setup_tbl, 1, 3, vol_spike ? "✓" : "✗",
+         text_color=color.white, bgcolor=vol_spike ? c_met : c_nmet, text_size=size.small)
+    table.cell(setup_tbl, 2, 3, d_vol,
+         text_color=color.white, bgcolor=c_det, text_size=size.small)
+
+    // Row 4 — Momentum
+    table.cell(setup_tbl, 0, 4, "Momentum",
+         text_color=color.white, bgcolor=c_det, text_size=size.small, text_halign=text.align_left)
+    table.cell(setup_tbl, 1, 4, mom_candle ? "✓" : "✗",
+         text_color=color.white, bgcolor=mom_candle ? c_met : c_nmet, text_size=size.small)
+    table.cell(setup_tbl, 2, 4, d_mom,
+         text_color=color.white, bgcolor=c_det, text_size=size.small)
