@@ -101,8 +101,35 @@ When running a Kind cluster for local development, the default storage class doe
 ### Bounce timing: bounce must occur AFTER ph1, not just anywhere in span
 An earlier version of the code checked for any EMA bounce between the two pivot highs. The correct logic is: the structural EMA touch occurs AFTER `ph1` (the newer, lower pivot) — the pattern is trendline forms first, then price bounces at EMA, then breakout. `long_bounce_ok` is wrong if it accepts bounces before `ph1b`.
 
-### Breakout scan direction: oldest crossing wins (`last write wins`)
-The breakout scan iterates from 0 (current bar) to the full trendline span. Each iteration overwrites `long_breakout_ago`. The final stored value is the oldest crossing in the span — the first time price broke through the trendline, not the most recent. This is intentional: we care about the initial breakout bar for volume/momentum grading.
+### Bounce bar must be below the trendline — check both `low` AND `close`
+`pp < tl_at_pb` alone is not enough. A hammer candle has a low below the trendline but can close above it — the candle already broke resistance if `close > tl_at_pb`. Both filters are required:
+```pine
+if pp < tl_at_pb and close[op] < tl_at_pb
+```
+SHORT is the mirror: `pp > tl_at_pb and close[op] > tl_at_pb`.
+
+### Bounce box spans full candle height — wick can visually cross the trendline
+The bounce box is drawn `box.new(bar, high[off], bar+1, low[off])`. A hammer whose wick taps resistance will visually appear to intersect the trendline even though the close (and low) are below it. This is correct behavior — the wick touching the line is exactly the bounce pattern. Don't mistake the wick overlap for a filter bug.
+
+### Breakout scan: two separate variables for bounce-window vs. grading
+`long_any_cross_ago` tracks the oldest crossing of any candle color (used for `bo_bar_l` — the right-hand boundary of the bounce search window). `long_breakout_ago` tracks only the oldest *bullish* crossing (used for the BO box and vol/momentum grading). They must stay separate:
+- If only `long_breakout_ago` were used for `bo_bar_l` and the breakout was all-red candles, `long_breakout_ago` stays `na` → `bar_index - na = na` → bounce scan finds nothing.
+- If only `long_any_cross_ago` were used for grading, a red doji barely crossing the trendline would get graded instead of the big green candle.
+
+### Breakout candle must be bullish (LONG) / bearish (SHORT)
+A red candle closing above a descending resistance line is a crossing, but not a valid breakout signal. Only bullish candles (`close > open`) are recorded in `long_breakout_ago`. `long_breakout` (the bool) still fires on any crossing so the retest/holding path continues to work.
+
+### `long_breakout_ago` becomes `na` when breakout is live (current bar)
+When the live bar is itself the first bullish crossing, `long_breakout_ago` is assigned `i=0` (current bar). But on the very same tick, `barstate.islast` resets it to `na` before the scan runs. The BO box will not appear and grading shows `—`. This resolves on the next closed bar.
+
+### Breakout scan direction: oldest bullish crossing wins (`last write wins`)
+The scan iterates `i = 0` (current) to span end (oldest). Each bullish crossing overwrites `long_breakout_ago`. Final value = oldest bullish crossing in the span. This is intentional: we care about the initial clean breakout bar for volume/momentum grading, not the most recent re-cross.
 
 ### Volume and momentum are evaluated on the breakout candle, not current bar
 `grade_vol` and `grade_mom` index into `volume[grade_ago]` and `high[grade_ago]`. Evaluating on the current bar would give misleading readings for setups that broke out several bars ago.
+
+### Pine Editor must be closed for the chart indicator to reflect compiled changes
+`pine_set_source` + `pine_smart_compile` saves to cloud but may not refresh the chart indicator if the Pine Editor panel is open. After compiling, close the editor (`ui_open_panel pine-editor close`) so TradingView reloads the indicator from the saved source. If B/BO boxes disappear after a compile cycle, this is the likely cause.
+
+### Re-adding the indicator after injecting source
+If `pine_smart_compile` returns `study_added: false` and the indicator visuals don't update, use `pine_open("Swing Setup Scanner")` followed by another `pine_smart_compile` to force a reload. The chart may still be running a cached prior version.
