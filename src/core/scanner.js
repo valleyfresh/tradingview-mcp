@@ -11,7 +11,7 @@ import { get as getWatchlist } from './watchlist.js';
 import { getPineLabels, getStudyValues, getOhlcv } from './data.js';
 
 const SCANNER_INDICATOR = 'Swing Setup Scanner';
-const GRADE_SCORE = { Ideal: 3, Strong: 2, Moderate: 1 };
+const TIER_SCORE = { S: 4, A: 3, B: 2, W1: 2, C: 1, W2: 1 };
 
 /** Switch symbol + timeframe using the same approach as batch.js */
 async function switchTo(symbol, timeframe) {
@@ -57,14 +57,15 @@ async function getMarketBias() {
 /** Parse a scanner label string into a structured object */
 function parseLabel(text, symbol) {
   const parts = text.split('|');
-  if (parts.length !== 5) return null;
-  const [direction, grade, touchStr, emaBarsStr, atrStr] = parts;
+  if (parts.length < 6) return null;
+  const [direction, tier, scenario, touchStr, emaBarsStr, atrStr] = parts;
   if (direction !== 'LONG' && direction !== 'SHORT') return null;
   return {
     symbol,
     direction,
-    grade,
-    grade_score: GRADE_SCORE[grade] ?? 0,
+    tier,
+    scenario,
+    tier_score: TIER_SCORE[tier] ?? 0,
     touch_points: parseInt(touchStr, 10) || 0,
     ema_bars: parseInt(emaBarsStr, 10) || 0,
     atr: parseFloat(atrStr) || 0,
@@ -133,9 +134,9 @@ export async function runWatchlistScan({
     }
   }
 
-  // 4. Rank: grade score → touch points → ema bars
+  // 4. Rank: tier score → touch points → ema bars
   signals.sort((a, b) => {
-    if (b.grade_score !== a.grade_score) return b.grade_score - a.grade_score;
+    if (b.tier_score !== a.tier_score) return b.tier_score - a.tier_score;
     if (b.touch_points !== a.touch_points) return b.touch_points - a.touch_points;
     return b.ema_bars - a.ema_bars;
   });

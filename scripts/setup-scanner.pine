@@ -395,31 +395,47 @@ float long_tl_now  = barstate.islast and long_piv_ok  ? ph1 + long_slope  * floa
 float short_tl_now = barstate.islast and short_piv_ok ? pl1 + short_slope * float(bar_index - pl1b) : na
 float watch_band   = i_watch_pct / 100.0
 
-bool long_watch = barstate.islast
-             and in_uptrend
-             and long_span_ok
-             and long_no_wick
-             and long_touches  >= i_min_touches
-             and long_bounce_ok
+// Bounce pattern quality — defined here so WATCH and SCORE blocks can both use them
+bool sp_long  = long_bounce_pat  == "hammer" or long_bounce_pat  == "engulf"
+bool sp_short = short_bounce_pat == "star"   or short_bounce_pat == "engulf"
+
+// W1: approaching trendline + quality bounce candle (hammer / engulf)
+bool long_watch1 = barstate.islast
+             and in_uptrend and long_span_ok and long_no_wick
+             and long_touches  >= i_min_touches and long_bounce_ok and sp_long
              and not long_breakout
              and not na(long_tl_now) and long_tl_now > 0.0
              and close < long_tl_now
              and (long_tl_now - close) / long_tl_now <= watch_band
 
-bool short_watch = barstate.islast
-              and in_downtrend
-              and short_span_ok
-              and short_no_wick
-              and short_touches  >= i_min_touches
-              and short_bounce_ok
+// W2: approaching trendline + bounce ok but no quality candle pattern
+bool long_watch2 = barstate.islast
+             and in_uptrend and long_span_ok and long_no_wick
+             and long_touches  >= i_min_touches and long_bounce_ok and not sp_long
+             and not long_breakout
+             and not na(long_tl_now) and long_tl_now > 0.0
+             and close < long_tl_now
+             and (long_tl_now - close) / long_tl_now <= watch_band
+
+bool short_watch1 = barstate.islast
+              and in_downtrend and short_span_ok and short_no_wick
+              and short_touches >= i_min_touches and short_bounce_ok and sp_short
+              and not short_breakout
+              and not na(short_tl_now) and short_tl_now > 0.0
+              and close > short_tl_now
+              and (close - short_tl_now) / short_tl_now <= watch_band
+
+bool short_watch2 = barstate.islast
+              and in_downtrend and short_span_ok and short_no_wick
+              and short_touches >= i_min_touches and short_bounce_ok and not sp_short
               and not short_breakout
               and not na(short_tl_now) and short_tl_now > 0.0
               and close > short_tl_now
               and (close - short_tl_now) / short_tl_now <= watch_band
 
 // ─── SCORE + TIER ─────────────────────────────────────────────────────────────
-bool is_long_active  = long_setup  or long_watch
-bool is_short_active = short_setup or short_watch
+bool is_long_active  = long_setup  or long_watch1 or long_watch2
+bool is_short_active = short_setup or short_watch1 or short_watch2
 bool any_signal      = is_long_active or is_short_active
 
 int   grade_ago = long_setup ? long_breakout_ago : (short_setup ? short_breakout_ago : na)
@@ -429,25 +445,24 @@ float g_body    = not na(grade_ago) ? math.abs(close[grade_ago] - open[grade_ago
 bool  grade_mom = g_range > 0.0 and g_body / g_range >= 0.6
 
 bool score_bounce  = is_long_active ? long_bounce_ok  : short_bounce_ok
-bool sp_long       = long_bounce_pat  == "hammer" or long_bounce_pat  == "engulf"
-bool sp_short      = short_bounce_pat == "star"   or short_bounce_pat == "engulf"
 bool score_pattern = is_long_active ? sp_long : sp_short
 bool score_mom     = (long_setup or short_setup) and grade_mom
 bool score_vol     = (long_setup or short_setup) and grade_vol
 int  active_score  = (score_bounce ? 1 : 0) + (score_pattern ? 1 : 0) + (score_mom ? 1 : 0) + (score_vol ? 1 : 0)
 
 bool   is_hold  = long_setup ? long_holding : (short_setup ? short_holding : false)
-string scenario = (long_watch or short_watch) ? "WATCH" : is_hold ? "HOLD" : "BO"
-string tier     = not any_signal ? "—" : (long_watch or short_watch) ? "W" : active_score >= 3 ? "S" : active_score == 2 ? "A" : active_score == 1 ? "B" : "C"
+string scenario = (long_watch1 or short_watch1 or long_watch2 or short_watch2) ? "WATCH" : is_hold ? "HOLD" : "BO"
+string tier     = not any_signal ? "—" : (long_watch1 or short_watch1) ? "W1" : (long_watch2 or short_watch2) ? "W2" : active_score >= 3 ? "S" : active_score == 2 ? "A" : active_score == 1 ? "B" : "C"
 
 // ─── TIER HELPERS ────────────────────────────────────────────────────────────
 tier_bg(t) =>
     switch t
-        "S" => color.new(color.yellow, 0)
-        "A" => color.new(color.lime, 15)
-        "B" => color.new(color.green, 20)
-        "W" => color.new(color.blue, 20)
-        =>     color.new(color.teal, 30)
+        "S"  => color.new(color.yellow,  0)
+        "A"  => color.new(color.lime,   15)
+        "B"  => color.new(color.green,  20)
+        "W1" => color.new(color.orange,  0)
+        "W2" => color.new(color.blue,   20)
+        =>      color.new(color.teal,   30)
 
 tier_fg(t) =>
     (t == "S" or t == "A") ? color.black : color.white
@@ -511,10 +526,12 @@ if barstate.islast
 
 // ─── MACHINE-READABLE LABEL OUTPUT ───────────────────────────────────────────
 // Format: "DIRECTION|TIER|SCENARIO|TOUCHES|EMA_BARS|ATR"
-var label long_lbl   = na
-var label short_lbl  = na
-var label lwatch_lbl = na
-var label swatch_lbl = na
+var label long_lbl    = na
+var label short_lbl   = na
+var label lwatch1_lbl = na
+var label swatch1_lbl = na
+var label lwatch2_lbl = na
+var label swatch2_lbl = na
 
 if long_setup
     string txt = "LONG|" + tier + "|" + scenario + "|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
@@ -528,17 +545,29 @@ if short_setup
     short_lbl := label.new(bar_index, low * 0.999, txt,
          style=label.style_label_up, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
 
-if long_watch
-    string txt = "LONG|W|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
-    label.delete(lwatch_lbl)
-    lwatch_lbl := label.new(bar_index, high * 1.001, txt,
-         style=label.style_label_down, color=tier_bg("W"), textcolor=tier_fg("W"), size=size.small)
+if long_watch1
+    string txt = "LONG|W1|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(lwatch1_lbl)
+    lwatch1_lbl := label.new(bar_index, high * 1.001, txt,
+         style=label.style_label_down, color=tier_bg("W1"), textcolor=tier_fg("W1"), size=size.small)
 
-if short_watch
-    string txt = "SHORT|W|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
-    label.delete(swatch_lbl)
-    swatch_lbl := label.new(bar_index, low * 0.999, txt,
-         style=label.style_label_up, color=tier_bg("W"), textcolor=tier_fg("W"), size=size.small)
+if short_watch1
+    string txt = "SHORT|W1|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(swatch1_lbl)
+    swatch1_lbl := label.new(bar_index, low * 0.999, txt,
+         style=label.style_label_up, color=tier_bg("W1"), textcolor=tier_fg("W1"), size=size.small)
+
+if long_watch2
+    string txt = "LONG|W2|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(lwatch2_lbl)
+    lwatch2_lbl := label.new(bar_index, high * 1.001, txt,
+         style=label.style_label_down, color=tier_bg("W2"), textcolor=tier_fg("W2"), size=size.small)
+
+if short_watch2
+    string txt = "SHORT|W2|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(swatch2_lbl)
+    swatch2_lbl := label.new(bar_index, low * 0.999, txt,
+         style=label.style_label_up, color=tier_bg("W2"), textcolor=tier_fg("W2"), size=size.small)
 
 // ─── PLOTS ───────────────────────────────────────────────────────────────────
 plot(ema_plot, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
@@ -562,7 +591,7 @@ if barstate.islast
         color  c_det        = color.new(color.gray,  70)
         color  hdr_bg       = any_signal ? tier_bg(tier) : color.new(color.gray, 60)
         color  hdr_fg       = any_signal ? tier_fg(tier) : color.white
-        bool   is_watch_tbl = long_watch or short_watch
+        bool   is_watch_tbl = long_watch1 or short_watch1 or long_watch2 or short_watch2
         int    b_ago        = is_long_tbl ? long_breakout_ago : short_breakout_ago
         bool   c_break      = is_long_tbl ? long_breakout : short_breakout
         string d_break      = is_watch_tbl ? "—" : not c_break ? "—" : (na(b_ago) or b_ago == 0) ? "now" : str.tostring(b_ago) + "b"
