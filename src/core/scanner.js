@@ -16,37 +16,37 @@ import { getPineLabels, getStudyValues, getOhlcv } from './data.js';
  * Section name matching is case-insensitive and ignores hidden Unicode chars.
  */
 async function getSymbolsFromSection(watchlistName, sectionName) {
-  const lists = await evaluate(`
-    (function() {
+  // Do all filtering inside the browser expression — only return the small
+  // symbols array, not the entire /all/ response (which truncates in evaluate).
+  const symbols = await evaluate(`
+    (function(wlName, secName) {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', '/api/v1/symbols_list/all/', false);
       xhr.withCredentials = true;
       xhr.send();
-      return JSON.parse(xhr.responseText);
-    })()
+      const lists = JSON.parse(xhr.responseText);
+      const wl = lists.find(l =>
+        l.type === 'custom' &&
+        l.name && l.name.toLowerCase() === wlName.toLowerCase()
+      );
+      if (!wl) return { error: 'not_found' };
+      const target = secName.toLowerCase();
+      let inSection = false;
+      const result = [];
+      for (const sym of (wl.symbols || [])) {
+        if (sym.startsWith('###')) {
+          const label = sym.slice(3).replace(/[^\\x20-\\x7E]/g, '').trim().toLowerCase();
+          inSection = label === target;
+        } else if (inSection) {
+          result.push(sym);
+        }
+      }
+      return { symbols: result };
+    })(${safeString(watchlistName)}, ${safeString(sectionName)})
   `);
 
-  const wl = lists?.find(l =>
-    l.type === 'custom' &&
-    l.name?.toLowerCase() === watchlistName.toLowerCase()
-  );
-  if (!wl) throw new Error(`Watchlist "${watchlistName}" not found via API`);
-
-  const target = sectionName.toLowerCase();
-  let inSection = false;
-  const result = [];
-
-  for (const sym of (wl.symbols || [])) {
-    if (sym.startsWith('###')) {
-      // Strip ### and any hidden Unicode chars, then compare
-      const label = sym.slice(3).replace(/[^\x20-\x7E]/g, '').trim().toLowerCase();
-      inSection = label === target;
-    } else if (inSection) {
-      result.push(sym);
-    }
-  }
-
-  return result;
+  if (symbols?.error === 'not_found') throw new Error(`Watchlist "${watchlistName}" not found via API`);
+  return symbols?.symbols || [];
 }
 
 const SCANNER_INDICATOR = 'Swing Setup Scanner';
