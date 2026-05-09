@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if [ -f tests/pine-visual/.tdd-active ]; then COUNT=$(cat tests/pine-visual/.tdd-active); if [ \"$COUNT\" -lt 10 ]; then echo \"[Pine TDD active — iteration $COUNT/10] Tests still running. Analyse .last-results.json and continue fixing.\"; cat tests/pine-visual/.last-results.json 2>/dev/null; fi; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -93,41 +93,17 @@ if not na(raw_pl)
         array.pop(pl_prices)
         array.pop(pl_bars_a)
 
-// ─── BOUNCE PATTERN TRACKING ─────────────────────────────────────────────────
-var string last_bull_pattern  = "—"
-var string last_bear_pattern  = "—"
-var int    last_bull_bar      = na
-var int    last_bear_bar      = na
-
-// ─── EMA BOUNCE DETECTION ────────────────────────────────────────────────────
-// Bullish (LONG setup): low came within bounce_pct of EMA + hammer or bull engulfing
-bool low_near_ema   = low  >= ema_val * (1.0 - bounce_pct) and low  <= ema_val * (1.0 + bounce_pct)
-bool is_hammer      = (high - low) > 0.0 and (close - low) / (high - low + 0.0001) >= 0.6 and close > open
-bool is_bull_engulf = close > open and close > high[1] and open < close[1]
-bool bull_bounce    = low_near_ema and (is_hammer or is_bull_engulf)
-
-// Bearish (SHORT setup): high came within bounce_pct of EMA + shooting star or bear engulfing
-bool high_near_ema  = high >= ema_val * (1.0 - bounce_pct) and high <= ema_val * (1.0 + bounce_pct)
-bool is_star        = (high - low) > 0.0 and (high - close) / (high - low + 0.0001) >= 0.6 and close < open
-bool is_bear_engulf = close < open and close < low[1] and open > close[1]
-bool bear_bounce    = high_near_ema and (is_star or is_bear_engulf)
-
-if bull_bounce
-    last_bull_pattern := is_hammer ? "hammer" : "engulf"
-    last_bull_bar     := bar_index
-if bear_bounce
-    last_bear_pattern := is_star ? "star" : "engulf"
-    last_bear_bar     := bar_index
-
-int bsince_bull = ta.barssince(bull_bounce)
-int bsince_bear = ta.barssince(bear_bounce)
-
-// (Bounce candle highlight drawn from barstate.islast — see below)
+// ─── BOUNCE TRACKING ─────────────────────────────────────────────────────────
+// Computed inside barstate.islast scoped to the active trendline.
+// Window: most recent pivot low near EMA that occurred AFTER ph1b and AT OR BEFORE
+// the breakout bar. This excludes post-breakout pullbacks from being shown as the bounce.
+var string long_bounce_pat  = "—"
+var int    long_bounce_bar  = na
+var string short_bounce_pat = "—"
+var int    short_bounce_bar = na
 
 // ─── VOLUME & MOMENTUM ───────────────────────────────────────────────────────
-float avg_vol   = ta.sma(volume, i_vol_lb + 1)
-bool  vol_spike  = volume > avg_vol * 1.2
-bool  mom_candle = (high - low) > 0.0 and math.abs(close - open) / (high - low) >= 0.6
+float avg_vol = ta.sma(volume, i_vol_lb + 1)
 
 // ─── HEAVY CHECKS (last bar only for performance) ────────────────────────────
 var float ph1  = na
@@ -269,9 +245,6 @@ if barstate.islast
         if not long_ema_clean
             long_piv_ok := false
         else
-            // Bounce must happen AFTER ph1 (trendline forms first, then EMA bounce, then breakout)
-            long_bounce_ok := not na(bsince_bull) and bsince_bull < (bar_index - ph1b)
-
             // Scan full trendline span for the first (oldest) bar that crossed above
             int long_scan = math.min(bar_index - ph1b, 200)
             for i = 0 to long_scan
@@ -303,9 +276,6 @@ if barstate.islast
         if not short_ema_clean
             short_piv_ok := false
         else
-            // Bounce must happen AFTER pl1
-            short_bounce_ok := not na(bsince_bear) and bsince_bear < (bar_index - pl1b)
-
             int short_scan = math.min(bar_index - pl1b, 200)
             for i = 0 to short_scan
                 float tl_i  = pl1 + short_slope * float(bar_index -     i - pl1b)
@@ -314,21 +284,67 @@ if barstate.islast
                     short_breakout     := true
                     short_breakout_ago := i
 
+    // ── Bounce scan: deepest pivot near EMA in window [ph2b, breakout_bar] ──
+    // ph2b (older trendline pivot) is the left bound so we cover the full trendline span.
+    // ph1b is too recent — the structural EMA touch often precedes it.
+    long_bounce_bar  := na
+    long_bounce_pat  := "—"
+    long_bounce_ok   := false
+    short_bounce_bar := na
+    short_bounce_pat := "—"
+    short_bounce_ok  := false
+
+    if long_piv_ok
+        int   bo_bar_l = long_breakout ? (bar_index - long_breakout_ago) : bar_index
+        int   pl_cnt   = array.size(pl_bars_a)
+        float best_low = na
+        for i = 0 to pl_cnt - 1
+            int   pb = array.get(pl_bars_a, i)
+            float pp = array.get(pl_prices, i)
+            if pb >= ph2b and pb <= bo_bar_l
+                int   op     = bar_index - pb
+                float ema_pb = ema_val[op]
+                if pp >= ema_pb * (1.0 - bounce_pct) and pp <= ema_pb * (1.0 + bounce_pct * 2)
+                    if na(best_low) or pp < best_low
+                        best_low        := pp
+                        long_bounce_bar := pb
+                        long_bounce_ok  := true
+                        bool is_h = (high[op] - low[op]) > 0.0 and (close[op] - low[op]) / (high[op] - low[op] + 0.0001) >= 0.6 and close[op] > open[op]
+                        bool is_e = close[op] > open[op] and close[op] > high[op + 1] and open[op] < close[op + 1]
+                        long_bounce_pat := is_h ? "hammer" : is_e ? "engulf" : "swing"
+
+    if short_piv_ok
+        int   bo_bar_s  = short_breakout ? (bar_index - short_breakout_ago) : bar_index
+        int   ph_cnt    = array.size(ph_bars_a)
+        float best_high = na
+        for i = 0 to ph_cnt - 1
+            int   pb = array.get(ph_bars_a, i)
+            float pp = array.get(ph_prices, i)
+            if pb >= pl2b and pb <= bo_bar_s
+                int   op     = bar_index - pb
+                float ema_pb = ema_val[op]
+                if pp >= ema_pb * (1.0 - bounce_pct) and pp <= ema_pb * (1.0 + bounce_pct * 2)
+                    if na(best_high) or pp > best_high
+                        best_high        := pp
+                        short_bounce_bar := pb
+                        short_bounce_ok  := true
+                        bool is_s = (high[op] - low[op]) > 0.0 and (high[op] - close[op]) / (high[op] - low[op] + 0.0001) >= 0.6 and close[op] < open[op]
+                        bool is_e = close[op] < open[op] and close[op] < low[op + 1] and open[op] > close[op + 1]
+                        short_bounce_pat := is_s ? "star" : is_e ? "engulf" : "swing"
+
     // ── Grade computation ──────────────────────────────────────────────────
     if long_piv_ok
         float tl_now     = ph1 + long_slope * float(bar_index - ph1b)
-        bool bounce_ok   = last_bull_pattern != "—" and not na(last_bull_bar) and last_bull_bar >= ph2b
         bool approaching = tl_now > 0.0 and close < tl_now and (tl_now - close) / tl_now <= 0.02
         bool holding     = long_breakout and tl_now > 0.0 and close >= tl_now * 0.995
-        if bounce_ok
+        if long_bounce_ok
             long_grade := (approaching or holding) ? "A" : "B"
 
     if short_piv_ok
         float tl_now     = pl1 + short_slope * float(bar_index - pl1b)
-        bool bounce_ok   = last_bear_pattern != "—" and not na(last_bear_bar) and last_bear_bar >= pl2b
         bool approaching = tl_now > 0.0 and close > tl_now and (close - tl_now) / tl_now <= 0.02
         bool holding     = short_breakout and tl_now > 0.0 and close <= tl_now * 1.005
-        if bounce_ok
+        if short_bounce_ok
             short_grade := (approaching or holding) ? "A" : "B"
 
 // ─── SETUP SIGNALS ───────────────────────────────────────────────────────────
@@ -354,10 +370,17 @@ bool short_setup = barstate.islast
               and short_breakout
 
 // ─── SETUP GRADE ─────────────────────────────────────────────────────────────
+// Evaluate vol/momentum on the breakout candle, not the current bar
+int   grade_ago = long_setup ? long_breakout_ago : short_breakout_ago
+bool  grade_vol = not na(grade_ago) and volume[grade_ago] > avg_vol[grade_ago] * 1.2
+float g_range   = not na(grade_ago) ? (high[grade_ago] - low[grade_ago]) : 0.0
+float g_body    = not na(grade_ago) ? math.abs(close[grade_ago] - open[grade_ago]) : 0.0
+bool  grade_mom = g_range > 0.0 and g_body / g_range >= 0.6
+
 string grade = "Moderate"
-if vol_spike and mom_candle
+if grade_vol and grade_mom
     grade := "Ideal"
-else if vol_spike or mom_candle
+else if grade_vol or grade_mom
     grade := "Strong"
 
 // ─── VISUAL TRENDLINES + BOUNCE HIGHLIGHT ────────────────────────────────────
@@ -384,16 +407,16 @@ if barstate.islast
         line.delete(short_line)
         short_line := line.new(pl2b, pl2, bar_index + 30, proj, color=tl_col, width=2)
 
-    // Highlight only the most recent EMA bounce candle
+    // Highlight the setup bounce candle
     box.delete(bounce_box)
     bounce_box := na
-    if above_ema and not na(last_bull_bar)
-        int off = bar_index - last_bull_bar
-        bounce_box := box.new(last_bull_bar, high[off], last_bull_bar + 1, low[off],
+    if not na(long_bounce_bar)
+        int off = bar_index - long_bounce_bar
+        bounce_box := box.new(long_bounce_bar, high[off], long_bounce_bar + 1, low[off],
              bgcolor=color.new(color.lime, 60), border_color=color.new(color.lime, 20), border_width=1)
-    else if not above_ema and not na(last_bear_bar)
-        int off = bar_index - last_bear_bar
-        bounce_box := box.new(last_bear_bar, high[off], last_bear_bar + 1, low[off],
+    else if not na(short_bounce_bar)
+        int off = bar_index - short_bounce_bar
+        bounce_box := box.new(short_bounce_bar, high[off], short_bounce_bar + 1, low[off],
              bgcolor=color.new(color.red, 60), border_color=color.new(color.red, 20), border_width=1)
 
 // ─── MACHINE-READABLE LABEL OUTPUT ───────────────────────────────────────────
@@ -438,11 +461,8 @@ if barstate.islast
             table.delete(setup_tbl)
             setup_tbl := na
     else
-        // Bounce valid only if it falls within the trendline's time span
-        bool bounce_ok_l = last_bull_pattern != "—" and not na(last_bull_bar) and last_bull_bar >= ph2b
-        bool bounce_ok_s = last_bear_pattern != "—" and not na(last_bear_bar) and last_bear_bar >= pl2b
-        bool   c_bounce  = is_long ? bounce_ok_l : bounce_ok_s
-        string d_bounce  = is_long ? last_bull_pattern : last_bear_pattern
+        bool   c_bounce  = is_long ? long_bounce_ok  : short_bounce_ok
+        string d_bounce  = is_long ? long_bounce_pat : short_bounce_pat
 
         bool   c_break = is_long ? long_breakout : short_breakout
         int    b_ago   = is_long ? long_breakout_ago : short_breakout_ago

@@ -1,0 +1,70 @@
+[
+  {
+    "case_id": "trendline-color",
+    "description": "Trendline color must match setup state: orange=ready, green/red=breakout, blue=developing-only",
+    "ticker": "AAPL",
+    "timeframe": "60",
+    "pass": null,
+    "status": "partial",
+    "results": [
+      {
+        "assertion": "visual",
+        "pass": null,
+        "status": "visual_pending",
+        "reason": "Check trendline color matches label state. If a LONG|* setup label is visible, the trendline must be green (breakout confirmed). If no label but trendline visible, it may be orange (ready, span met) or blue (developing). A blue trendline must NOT appear alongside a setup label."
+      }
+    ],
+    "timestamp": "2026-05-09T07:51:49.265Z"
+  },
+  {
+    "case_id": "long-setup-logic",
+    "description": "LONG bounce box must sit at an EMA-proximate pivot low, not an arbitrary deep swing",
+    "ticker": "AAPL",
+    "timeframe": "60",
+    "pass": true,
+    "status": "pass",
+    "results": [
+      {
+        "assertion": "if_long_setup",
+        "pass": true,
+        "status": "skipped",
+        "reason": "No LONG setup present — vacuously pass"
+      }
+    ],
+    "timestamp": "2026-05-09T08:03:39.961Z"
+  },
+  {
+    "case_id": "short-setup-logic",
+    "description": "SHORT bounce box must sit near EMA — already has proximity check, should always pass",
+    "ticker": "AAPL",
+    "timeframe": "60",
+    "pass": true,
+    "status": "pass",
+    "results": [
+      {
+        "assertion": "if_short_setup",
+        "pass": true,
+        "status": "skipped",
+        "reason": "No SHORT setup present — vacuously pass"
+      }
+    ],
+    "timestamp": "2026-05-09T08:03:39.995Z"
+  },
+  {
+    "case_id": "long-bounce-ema-gate",
+    "description": "LONG bounce scan must have EMA proximity gate (mirrors the SHORT bounce gate at lines ~317-334)",
+    "ticker": "AAPL",
+    "timeframe": "60",
+    "pass": true,
+    "status": "pass",
+    "results": [
+      {
+        "assertion": "pine_source_contains",
+        "pass": true,
+        "status": "pass",
+        "reason": "Pattern found: \"ema_pb * (1.0 - bounce_pct)\""
+      }
+    ],
+    "timestamp": "2026-05-09T08:08:39.084Z"
+  }
+]

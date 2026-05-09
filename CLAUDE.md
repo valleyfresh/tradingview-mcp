@@ -2,6 +2,7 @@
 
 > **Private fork** — built for swing trading US equities. Do not open PRs to upstream.
 > Read the **Project Status** section at the bottom before starting any session.
+> Before editing Pine Script, MCP config, or infrastructure code — read **[GOTCHAS.md](GOTCHAS.md)**.
 
 68 tools for reading and controlling a live TradingView Desktop chart via CDP (port 9222).
 

@@ -1,0 +1,15 @@
+{
+  "id": "long-bounce-ema-gate",
+  "description": "LONG bounce scan must have EMA proximity gate (mirrors the SHORT bounce gate at lines ~317-334)",
+  "ticker": "AAPL",
+  "timeframe": "60",
+  "assertions": [
+    {
+      "type": "pine_source_contains",
+      "file": "scripts/setup-scanner.pine",
+      "pattern": "ema_pb * (1.0 - bounce_pct)",
+      "context_near": "long_bounce_bar",
+      "description": "LONG bounce loop must filter pivots by EMA proximity, same as SHORT bounce does"
+    }
+  ]
+}

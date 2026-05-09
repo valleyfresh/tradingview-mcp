@@ -1,0 +1,13 @@
+{
+  "id": "trendline-color",
+  "description": "Trendline color must match setup state: orange=ready, green/red=breakout, blue=developing-only",
+  "ticker": "AAPL",
+  "timeframe": "60",
+  "assertions": [
+    {
+      "type": "visual",
+      "screenshot_region": "chart",
+      "description": "Check trendline color matches label state. If a LONG|* setup label is visible, the trendline must be green (breakout confirmed). If no label but trendline visible, it may be orange (ready, span met) or blue (developing). A blue trendline must NOT appear alongside a setup label."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "short-setup-logic",
+  "description": "SHORT bounce box must sit near EMA — already has proximity check, should always pass",
+  "ticker": "AAPL",
+  "timeframe": "60",
+  "assertions": [
+    {
+      "type": "if_short_setup",
+      "then": [
+        { "type": "has_bounce_box" },
+        { "type": "bounce_box_near_ema", "tolerance_pct": 10 }
+      ]
+    }
+  ]
+}

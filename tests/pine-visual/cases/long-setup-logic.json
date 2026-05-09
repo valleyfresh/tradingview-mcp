@@ -1,0 +1,15 @@
+{
+  "id": "long-setup-logic",
+  "description": "LONG bounce box must sit at an EMA-proximate pivot low, not an arbitrary deep swing",
+  "ticker": "AAPL",
+  "timeframe": "60",
+  "assertions": [
+    {
+      "type": "if_long_setup",
+      "then": [
+        { "type": "has_bounce_box" },
+        { "type": "bounce_box_near_ema", "tolerance_pct": 10 }
+      ]
+    }
+  ]
+}
