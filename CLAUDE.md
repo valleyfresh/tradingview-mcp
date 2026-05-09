@@ -163,6 +163,7 @@ Daryl Lee — swing/position trader, US equities, technical analysis. Building a
 | `morning-brief` | Full pre-market briefing |
 | `setup-scanner-qa` | Debug why a valid setup isn't firing; tune indicator thresholds; add new filters |
 | `tv-connect` | Establish or restore CDP connection to TradingView Desktop (especially from WSL2) |
+| `swing-watchlist` | After a scan, route S/A tier signals into the "Swing" watchlist sections |
 
 ### Key Files
 - `scripts/setup-scanner.pine` — Pine Script indicator (saved to TV cloud as "Swing Setup Scanner")

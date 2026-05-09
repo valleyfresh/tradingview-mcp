@@ -1,67 +1,94 @@
 # Skill: swing-watchlist
 
-Routes S-tier and A-tier scanner results into the "Swing" TradingView watchlist (4 sections).
+Routes S-tier and A-tier scanner results into a named TradingView watchlist with sections.
 
-## Watchlist structure (discovered 2026-05-09)
+## Watchlist Discovery
 
-- **Watchlist name:** Swing
-- **Watchlist ID:** `330412486`
-- **Section format:** `###SECTION-NAME` strings in the symbols array
-- **Sections (exact names):**
+All custom watchlists are accessible via:
+```
+GET /api/v1/symbols_list/all/
+```
+Returns an array of all lists (custom + colored). Filter by `type === 'custom'` and `name` to find any watchlist.
+
+```js
+(function() {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/v1/symbols_list/all/', false);
+  xhr.withCredentials = true;
+  xhr.send();
+  const all = JSON.parse(xhr.responseText);
+  return all.filter(l => l.type === 'custom').map(l => ({ id: l.id, name: l.name, symbols: l.symbols }));
+})()
+```
+
+Use this any time you need to find a watchlist ID, inspect its section layout, or add a new watchlist to a skill.
+
+### Known watchlists (as of 2026-05-09)
+
+| Name | ID | Notes |
+|------|----|-------|
+| Watchlist | 64693096 | Main scan source — "SMA list" equivalent, STOCKS section |
+| Swing | 330412486 | 4-section output watchlist for S/A tier signals |
+| SMA Strat | 153475213 | 22 symbols |
+| Small / Mid Cap | 131731934 | 35 symbols |
+| Day | 129007157 | 22 symbols |
+
+## API endpoints (custom lists)
+
+- `GET  /api/v1/symbols_list/custom/{id}/` → current symbols array
+- `POST /api/v1/symbols_list/custom/{id}/append/?source=web-tvd` → append symbols (JSON array)
+- `POST /api/v1/symbols_list/custom/{id}/remove/?source=web-tvd` → remove symbols (JSON array)
+
+PUT/PATCH are not allowed. Use remove-then-rebuild with append.
+
+## Swing watchlist structure
+
+- **ID:** `330412486`
+- **Sections (exact strings):**
   - `###S-TIER (LONG)`
   - `###S-TIER (SHORT)`
   - `###A-TIER (LONG)`
   - `###A-TIER (SHORT)`
 
-## API endpoints
-
-- `GET  /api/v1/symbols_list/custom/330412486/` → current state
-- `POST /api/v1/symbols_list/custom/330412486/append/?source=web-tvd` → add symbols (appends to end)
-- `POST /api/v1/symbols_list/custom/330412486/remove/?source=web-tvd` → remove symbols by value
-
-No PUT/PATCH available — use remove-then-rebuild pattern (see Step 4).
+Sections are stored as `###`-prefixed strings in the symbols array. Tickers appear after their section separator.
 
 ## Steps
 
-### 1. Switch active watchlist to "Watchlist" (STOCKS section)
+### 1. Switch active watchlist to "Watchlist"
 
-The scanner reads whatever watchlist is visible in TradingView's right panel. Before calling `scanner_run_watchlist`, ensure the main **"Watchlist"** is active — not "Swing" or any other list. Switch via UI if needed.
+The scanner reads whatever watchlist is currently visible in TradingView's right panel. Before scanning, confirm the main **"Watchlist"** (id 64693096) is active — not "Swing" or any other list.
 
 ### 2. Run the scanner
 
-Call `scanner_run_watchlist`. Collect the full result including `signals` array and list of all scanned symbols.
+Call `scanner_run_watchlist`. Collect the `signals` array — each entry has `symbol`, `direction`, `tier`, `scenario`.
 
-### 3. Filter signals by tier
+### 3. Filter by tier
 
-Route only S and A tier signals. Ignore W1, W2, B, C.
+| Tier | Direction | → Section |
+|------|-----------|-----------|
+| S | LONG | S-TIER (LONG) |
+| S | SHORT | S-TIER (SHORT) |
+| A | LONG | A-TIER (LONG) |
+| A | SHORT | A-TIER (SHORT) |
+| W1, W2, B, C | — | skip |
 
-For each signal in `signals`:
-```
-tier === 'S', direction === 'LONG'  → S-tier long
-tier === 'S', direction === 'SHORT' → S-tier short
-tier === 'A', direction === 'LONG'  → A-tier long
-tier === 'A', direction === 'SHORT' → A-tier short
-```
+### 4. Rebuild the Swing watchlist
 
-All other tiers → not added to swing watchlist.
-
-### 4. Rebuild the swing watchlist
-
-Use `ui_evaluate` with synchronous XHR. The strategy: remove all existing content (separators + tickers), then re-append in section order.
+Remove everything (separators + tickers), then append the full ordered array in one call:
 
 ```js
-(function() {
+(function(sLong, sShort, aLong, aShort) {
   const id = 330412486;
   const base = `/api/v1/symbols_list/custom/${id}`;
 
-  // Step A: get current symbols
+  // Get current content
   const g = new XMLHttpRequest();
   g.open('GET', `${base}/`, false);
   g.withCredentials = true;
   g.send();
   const current = JSON.parse(g.responseText).symbols || [];
 
-  // Step B: remove everything
+  // Clear everything
   if (current.length > 0) {
     const r = new XMLHttpRequest();
     r.open('POST', `${base}/remove/?source=web-tvd`, false);
@@ -70,12 +97,7 @@ Use `ui_evaluate` with synchronous XHR. The strategy: remove all existing conten
     r.send(JSON.stringify(current));
   }
 
-  // Step C: rebuild in order — separators interleaved with tickers
-  const sLong  = [/* EXCHANGE:TICKER, ... */];
-  const sShort = [/* EXCHANGE:TICKER, ... */];
-  const aLong  = [/* EXCHANGE:TICKER, ... */];
-  const aShort = [/* EXCHANGE:TICKER, ... */];
-
+  // Rebuild with sections interleaved
   const newSymbols = [
     "###S-TIER (LONG)",  ...sLong,
     "###S-TIER (SHORT)", ...sShort,
@@ -89,13 +111,16 @@ Use `ui_evaluate` with synchronous XHR. The strategy: remove all existing conten
   a.withCredentials = true;
   a.send(JSON.stringify(newSymbols));
 
-  return { removed: current.length, appended: newSymbols.length, result: JSON.parse(a.responseText) };
-})()
+  return JSON.parse(a.responseText);
+})(
+  [/* S LONG symbols */],
+  [/* S SHORT symbols */],
+  [/* A LONG symbols */],
+  [/* A SHORT symbols */]
+)
 ```
 
 ### 5. Verify
-
-Call GET and confirm each section has the expected tickers:
 
 ```js
 (function() {
@@ -111,17 +136,15 @@ Call GET and confirm each section has the expected tickers:
 
 ```
 Swing watchlist updated:
-  ###S-TIER (LONG)  (2): NVDA, AMD
-  ###S-TIER (SHORT) (0): —
-  ###A-TIER (LONG)  (1): TSLA
-  ###A-TIER (SHORT) (0): —
+  S-TIER LONG  (2): NVDA, AMD
+  S-TIER SHORT (0): —
+  A-TIER LONG  (1): TSLA
+  A-TIER SHORT (0): —
 ```
 
 ## Notes
 
-- Symbol format: `EXCHANGE:TICKER` (e.g. `NASDAQ:NVDA`) — scanner already returns this format.
-- All XHR calls must be **synchronous** (`async=false`) — `ui_evaluate` cannot await Promises.
-- The rebuild uses a single append call with the full ordered array — sections appear in TradingView in the order the separators appear in the array.
-- If `scanner_run_watchlist` returns no S or A signals, still run the rebuild to clear stale entries (sections will be empty but separators preserved).
-- Do not route W1/W2 signals here — those belong in the flag-watchlist skill (color flags).
-- The scanner reads the **active watchlist** — confirm "Watchlist" (not "Swing") is showing before scanning.
+- Symbol format: `EXCHANGE:TICKER` (e.g. `NASDAQ:NVDA`) — scanner returns this already.
+- All XHR must be **synchronous** (`async=false`) — `ui_evaluate` cannot await Promises.
+- If no S/A signals, still run the rebuild — clears stale entries, preserves empty sections.
+- For a new watchlist: run discovery GET, note the id and section strings, update the skill.
