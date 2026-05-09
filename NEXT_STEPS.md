@@ -2,61 +2,80 @@
 
 ## What was completed this session
 
-### 1. Autonomous Pine TDD loop (new)
-Full infrastructure for self-correcting Pine Script verification:
+### 1. S/A/B/C/W tier scoring system (new)
+Complete replacement of the A/B grade system:
 
-- **`tests/pine-visual/cases/*.json`** — 4 test cases:
-  - `long-bounce-ema-gate.json` — structural: checks Pine source has EMA proximity gate near LONG bounce logic
-  - `long-setup-logic.json` — runtime: if LONG setup active, bounce box must be within 10% of EMA
-  - `short-setup-logic.json` — regression: SHORT bounce already gated, must stay passing
-  - `trendline-color.json` — visual: trendline color must match setup state (screenshot evaluated by Claude)
-- **`tests/pine-visual/evaluate.js`** — JS assertion evaluator; takes `--case <id> --data <json>`, writes `.last-results.json`, exits 0/1
-- **`skills/pine-tdd/SKILL.md`** — 10-iteration autonomous loop protocol
-- **`.claude/settings.json`** — Stop hook echoes test status while `.tdd-active` sentinel exists
+- **S** (score ≥3): gold label — best quality BO
+- **A** (score 2): lime label
+- **B** (score 1): green label
+- **C** (score 0): teal label
+- **W** (Watch): blue label — pre-breakout, approaching trendline
 
-### 2. Bug fixed: LONG bounce EMA proximity gate
-**Root cause:** LONG bounce scan picked the pivot low with the *lowest price* in the trendline span, no EMA proximity check. SHORT bounce already had this gate. Bounce box could appear on a deep swing low far from EMA.
+Score components (0–4):
+1. EMA bounce detected (`long_bounce_ok`)
+2. Quality candle pattern (hammer / engulf)
+3. BO candle momentum (body ≥60% of range)
+4. BO candle volume (>1.2× 5-bar avg)
 
-**Fix** (`scripts/setup-scanner.pine` ~line 305, inside LONG bounce for-loop):
-```pine
-float ema_pb = ema_val[op]
-if pp >= ema_pb * (1.0 - bounce_pct) and pp <= ema_pb * (1.0 + bounce_pct * 2)
-    if na(best_low) or pp < best_low
-        ...
-```
+### 2. WATCH signal (new)
+Fires when all structural conditions are met (EMA trend, trendline valid, span ok, no wicks, 2+ touches, EMA bounce) but no breakout yet and price is within `i_watch_pct`% (default 3%) of the current trendline value. Blue flag label, W tier in table.
 
-**Verified:** Compiled clean. AAPL showed LONG [A] setup post-fix with Bounce EMA ✓ (hammer).
+### 3. ATH / PDH flags (new)
+Informational only — displayed in row 6 of the table:
+- **★ ATH**: `close >= daily_high_52w * 0.95` (52-week high via `request.security("D", ta.highest(high, 252))`)
+- **★ PDH**: within 1% of `high[1]` on daily
 
-### 3. Permissions
-`settings.local.json` now uses blanket `mcp__tradingview__*` — no more per-tool prompts.
+### 4. Slope lift (new)
+Before the breakout scan, weak bearish closes ≤0.5% above the trendline are treated as touches (not breakouts) — slope is raised to clear them. Prevents false breakout flags on shallow red bars that barely crossed the line.
+
+### 5. Fixed 7-row table
+Eliminates the old dynamic-row-count bug. Table always has exactly 7 rows:
+- Row 0: direction | score | tier + scenario (BO/HOLD/WATCH)
+- Row 1: Bounce EMA ✓/✗
+- Row 2: Pattern ✓/✗ (hammer/engulf/star/—)
+- Row 3: BO Candle ✓/✗ (gray for WATCH)
+- Row 4: Volume ✓/✗ (gray for WATCH)
+- Row 5: Momentum ✓/✗ (gray for WATCH)
+- Row 6: Flags (★ ATH, ★ PDH, or blank)
+
+### 6. Pine v6 multi-line ternary discovery (documented in GOTCHAS.md)
+Multi-line ternaries fail at global scope for string/color types. Safe alternatives:
+- Single-line ternary for bool/int
+- `switch` statement for color-returning functions
+- Split complex conditions into named booleans before composing
+
+### 7. Committed
+`git commit 598fc59` — "feat: add S/A/B/C/W tier scoring system + WATCH signals + ATH/PDH flags"
 
 ---
 
-## How to run the TDD loop
-
-Invoke the `pine-tdd` skill — Claude follows `skills/pine-tdd/SKILL.md` autonomously.
-
-Manual one-off:
-```bash
-node tests/pine-visual/evaluate.js --case long-bounce-ema-gate --data '{"labels":[],"boxes":[],"ema":0}'
-```
+## Verified on chart
+AAPL 1h:
+- Green trendline (breakout state, 20 bars ago)
+- Lime green B box on bounce candle
+- Orange BO box on breakout candle
+- 7-row table with **Flags row: ★ATH ★PDH** (AAPL near 52-week high and prior-day high)
+- Gray table header (no active signal — BO was 20 bars ago, not within hold window)
 
 ---
 
 ## Pending work
 
-1. **Live regression with an active setup** — `long-setup-logic` / `short-setup-logic` currently vacuously pass (no setups at scan time). Next time a watchlist ticker fires, re-run with real label/box/EMA data.
+1. **Live WATCH signal verification** — switch to a ticker approaching its trendline without a breakout; confirm blue W label fires and table shows WATCH scenario.
 
-2. **More test cases** — candidates:
-   - `grade-a-requires-approaching-or-holding` — grade A only when price near trendline
-   - `no-wick-above-trendline` — no candle high > trendline × 1.003
-   - `minimum-span` — setup label must not appear if span < 21 bars
+2. **Live regression with active setup** — `long-setup-logic` / `short-setup-logic` TDD tests currently vacuously pass (no setups at scan time). Re-run with real label/box/EMA data when a watchlist ticker fires.
 
-3. **Live scan post-fix** — Run `scanner_run_watchlist` to see if signal count changed after EMA gate addition.
+3. **Run scanner_run_watchlist** — count signals with new tier system, verify `LONG|S|BO|3|45|0.87` label format is emitted, check tier distribution across watchlist.
 
-4. **Morning brief end-to-end** — Still pending.
+4. **More TDD test cases** — candidates:
+   - `watch-signal` — WATCH label fires when within 3% of trendline
+   - `tier-colors` — S/A/B/C labels are correct colors (screenshot-based)
+   - `ath-flag` — Flags row shows ★ATH for stocks near 52-week high
+   - `slope-lift` — weak red close above trendline doesn't trigger breakout
 
-5. **openclaw server migration** — Still pending.
+5. **Morning brief end-to-end** — still pending.
+
+6. **openclaw server migration** — still pending.
 
 ---
 
