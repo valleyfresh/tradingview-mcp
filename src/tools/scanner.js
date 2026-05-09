@@ -13,6 +13,11 @@ export function registerScannerTools(server) {
       watchlist_name: z.string().optional().describe(
         'Name of the TradingView watchlist to scan (default: "SMA list")'
       ),
+      section: z.string().optional().describe(
+        'Only scan symbols in this named section (e.g. "STOCKS"). ' +
+        'Uses the API to extract section symbols — ignores other sections like "MARKETS". ' +
+        'If omitted, reads all visible watchlist symbols from the DOM.'
+      ),
       timeframe: z.string().optional().describe(
         'Chart timeframe to scan on (default: "60" = 1 hour)'
       ),
@@ -25,10 +30,11 @@ export function registerScannerTools(server) {
         'Increase if signals are missing due to slow rendering.'
       ),
     },
-    async ({ watchlist_name, timeframe, filter_by_bias, delay_ms }) => {
+    async ({ watchlist_name, section, timeframe, filter_by_bias, delay_ms }) => {
       try {
         return jsonResult(await core.runWatchlistScan({
           watchlist_name,
+          section,
           timeframe,
           filter_by_bias,
           delay_ms,

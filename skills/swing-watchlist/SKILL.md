@@ -56,11 +56,17 @@ Sections are stored as `###`-prefixed strings in the symbols array. Tickers appe
 
 ### 1. Switch active watchlist to "Watchlist"
 
-The scanner reads whatever watchlist is currently visible in TradingView's right panel. Before scanning, confirm the main **"Watchlist"** (id 64693096) is active — not "Swing" or any other list.
+The scanner needs "Watchlist" visible in the right panel so it can switch to each symbol on the chart. Click the watchlist name dropdown and select "Watchlist" if not already active.
 
-### 2. Run the scanner
+### 2. Run the scanner (STOCKS section only)
 
-Call `scanner_run_watchlist`. Collect the `signals` array — each entry has `symbol`, `direction`, `tier`, `scenario`.
+Call `scanner_run_watchlist` with `watchlist_name="Watchlist"` and `section="STOCKS"`. The `section` parameter reads symbols from the API and filters to only the STOCKS section — MARKETS (indices, ETFs) is excluded automatically.
+
+```
+scanner_run_watchlist(watchlist_name="Watchlist", section="STOCKS", filter_by_bias=true)
+```
+
+Collect the `signals` array — each entry has `symbol`, `direction`, `tier`, `scenario`.
 
 ### 3. Filter by tier
 

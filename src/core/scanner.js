@@ -10,6 +10,45 @@ import { waitForChartReady } from '../wait.js';
 import { get as getWatchlist } from './watchlist.js';
 import { getPineLabels, getStudyValues, getOhlcv } from './data.js';
 
+/**
+ * Get symbols from a named watchlist section via the API.
+ * Handles the ### separator format TradingView uses for sections.
+ * Section name matching is case-insensitive and ignores hidden Unicode chars.
+ */
+async function getSymbolsFromSection(watchlistName, sectionName) {
+  const lists = await evaluate(`
+    (function() {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/v1/symbols_list/all/', false);
+      xhr.withCredentials = true;
+      xhr.send();
+      return JSON.parse(xhr.responseText);
+    })()
+  `);
+
+  const wl = lists?.find(l =>
+    l.type === 'custom' &&
+    l.name?.toLowerCase() === watchlistName.toLowerCase()
+  );
+  if (!wl) throw new Error(`Watchlist "${watchlistName}" not found via API`);
+
+  const target = sectionName.toLowerCase();
+  let inSection = false;
+  const result = [];
+
+  for (const sym of (wl.symbols || [])) {
+    if (sym.startsWith('###')) {
+      // Strip ### and any hidden Unicode chars, then compare
+      const label = sym.slice(3).replace(/[^\x20-\x7E]/g, '').trim().toLowerCase();
+      inSection = label === target;
+    } else if (inSection) {
+      result.push(sym);
+    }
+  }
+
+  return result;
+}
+
 const SCANNER_INDICATOR = 'Swing Setup Scanner';
 const TIER_SCORE = { S: 4, A: 3, B: 2, W1: 2, C: 1, W2: 1 };
 
@@ -83,15 +122,24 @@ function parseLabel(text, symbol) {
  */
 export async function runWatchlistScan({
   watchlist_name = 'SMA list',
+  section = null,
   timeframe = '60',
   filter_by_bias = true,
   delay_ms = 2000,
 } = {}) {
-  // 1. Get watchlist
-  const wl = await getWatchlist();
-  const symbols = wl.symbols?.map(s => s.symbol).filter(Boolean) || [];
-  if (symbols.length === 0) {
-    throw new Error(`No symbols found in watchlist. Make sure "${watchlist_name}" is open in TradingView.`);
+  // 1. Get watchlist symbols — via API section filter or DOM fallback
+  let symbols;
+  if (section) {
+    symbols = await getSymbolsFromSection(watchlist_name, section);
+    if (symbols.length === 0) {
+      throw new Error(`No symbols found in section "${section}" of watchlist "${watchlist_name}".`);
+    }
+  } else {
+    const wl = await getWatchlist();
+    symbols = wl.symbols?.map(s => s.symbol).filter(Boolean) || [];
+    if (symbols.length === 0) {
+      throw new Error(`No symbols found in watchlist. Make sure "${watchlist_name}" is open in TradingView.`);
+    }
   }
 
   // 2. Market bias (SPY)
