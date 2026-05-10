@@ -100,15 +100,14 @@ export async function getMarketBias(_fetch = fetchBias) {
   if (_biasCache.value !== null && Date.now() - _biasCache.ts < BIAS_TTL_MS) {
     return _biasCache.value;
   }
-  let result;
   try {
-    result = await _fetch();
+    const result = await _fetch();
+    _biasCache = { value: result, ts: Date.now() };
+    return result;
   } catch (err) {
     console.warn('[scanner] getMarketBias failed, defaulting to neutral:', err.message);
-    result = 'neutral';
+    return 'neutral';
   }
-  _biasCache = { value: result, ts: Date.now() };
-  return result;
 }
 
 /** Parse a scanner label string into a structured object */
