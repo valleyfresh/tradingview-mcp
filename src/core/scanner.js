@@ -5,7 +5,7 @@
  * Prerequisites: the "Swing Setup Scanner" indicator must be loaded and visible
  * on the 1h chart before calling runWatchlistScan().
  */
-import { evaluate, getChartApi, getChartCollection, safeString } from '../connection.js';
+import { evaluate, evaluateChecked, getChartApi, getChartCollection, safeString } from '../connection.js';
 import { waitForChartReady } from '../wait.js';
 import { get as getWatchlist } from './watchlist.js';
 import { getPineLabels, getStudyValues, getOhlcv } from './data.js';
@@ -16,9 +16,7 @@ import { getPineLabels, getStudyValues, getOhlcv } from './data.js';
  * Section name matching is case-insensitive and ignores hidden Unicode chars.
  */
 async function getSymbolsFromSection(watchlistName, sectionName) {
-  // Do all filtering inside the browser expression — only return the small
-  // symbols array, not the entire /all/ response (which truncates in evaluate).
-  const symbols = await evaluate(`
+  const symbols = await evaluateChecked(`
     (function(wlName, secName) {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', '/api/v1/symbols_list/all/', false);
@@ -43,7 +41,7 @@ async function getSymbolsFromSection(watchlistName, sectionName) {
       }
       return { symbols: result };
     })(${safeString(watchlistName)}, ${safeString(sectionName)})
-  `);
+  `, 'getSymbolsFromSection');
 
   if (symbols?.error === 'not_found') throw new Error(`Watchlist "${watchlistName}" not found via API`);
   return symbols?.symbols || [];
@@ -67,30 +65,49 @@ async function switchTo(symbol, timeframe) {
   await new Promise(r => setTimeout(r, 2000));
 }
 
-/** Determine market bias from SPY's position vs its daily EMA 20 */
-async function getMarketBias() {
-  try {
-    await switchTo('SPY', '60');
+// ── Bias cache ────────────────────────────────────────────────────────────
 
-    const studyVals = await getStudyValues();
-    const scannerStudy = studyVals.studies?.find(s =>
-      s.name?.toLowerCase().includes(SCANNER_INDICATOR.toLowerCase())
-    );
-    const emaStr = scannerStudy?.values?.['Daily EMA 20'];
-    const emaVal = parseFloat(emaStr);
+let _biasCache = { value: null, ts: 0 };
+const BIAS_TTL_MS = 15 * 60 * 1000;
 
-    const ohlcv = await getOhlcv({ count: 1, summary: false });
-    const lastClose = ohlcv.bars?.[0]?.close;
+export function _resetBiasCache() { _biasCache = { value: null, ts: 0 }; }
+export function _setBiasCache(cache) { _biasCache = cache; }
 
-    if (!emaVal || !lastClose || isNaN(emaVal)) return 'neutral';
+/** Fetch SPY bias from the live chart (no caching). */
+async function fetchBias() {
+  await switchTo('SPY', '60');
 
-    const diffPct = (lastClose - emaVal) / emaVal;
-    if (diffPct >  0.001) return 'long';
-    if (diffPct < -0.001) return 'short';
-    return 'neutral';
-  } catch {
-    return 'neutral';
+  const studyVals = await getStudyValues();
+  const scannerStudy = studyVals.studies?.find(s =>
+    s.name?.toLowerCase().includes(SCANNER_INDICATOR.toLowerCase())
+  );
+  const emaStr = scannerStudy?.values?.['Daily EMA 20'];
+  const emaVal = parseFloat(emaStr);
+
+  const ohlcv = await getOhlcv({ count: 1, summary: false });
+  const lastClose = ohlcv.bars?.[0]?.close;
+
+  if (!emaVal || !lastClose || isNaN(emaVal)) return 'neutral';
+
+  const diffPct = (lastClose - emaVal) / emaVal;
+  if (diffPct >  0.001) return 'long';
+  if (diffPct < -0.001) return 'short';
+  return 'neutral';
+}
+
+/** Return SPY market bias, using a 15-min cache to avoid redundant chart switches. */
+export async function getMarketBias(_fetch = fetchBias) {
+  if (_biasCache.value !== null && Date.now() - _biasCache.ts < BIAS_TTL_MS) {
+    return _biasCache.value;
   }
+  let result;
+  try {
+    result = await _fetch();
+  } catch {
+    result = 'neutral';
+  }
+  _biasCache = { value: result, ts: Date.now() };
+  return result;
 }
 
 /** Parse a scanner label string into a structured object */
