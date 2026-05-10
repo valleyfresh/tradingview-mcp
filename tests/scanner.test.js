@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateChecked } from '../src/connection.js';
-import { _resetBiasCache, _setBiasCache, getMarketBias } from '../src/core/scanner.js';
+import { _resetBiasCache, _setBiasCache, getMarketBias, formatSignalRow } from '../src/core/scanner.js';
 
 // ── evaluateChecked() ─────────────────────────────────────────────────────
 
@@ -92,25 +92,29 @@ describe('getMarketBias() — cache', () => {
 // ── Compact mode output format ────────────────────────────────────────────
 
 describe('compact signal format', () => {
-  it('compact row matches expected pipe-delimited format', () => {
+  it('formatSignalRow returns correct pipe-delimited format', () => {
     const signal = {
-      symbol: 'AAPL',
-      direction: 'LONG',
-      tier: 'S',
-      scenario: 'HOLD',
-      touch_points: 3,
-      ema_bars: 45,
-      atr: 2.1,
+      symbol: 'AAPL', direction: 'LONG', tier: 'S', scenario: 'HOLD',
+      touch_points: 3, ema_bars: 45, atr: 2.1,
     };
-    // Build the expected row using the same format the implementation will use
-    const row = `${signal.symbol}|${signal.direction}|${signal.tier}|${signal.scenario}|${signal.touch_points}|${signal.ema_bars}|${signal.atr}`;
-    assert.equal(row, 'AAPL|LONG|S|HOLD|3|45|2.1');
+    assert.equal(formatSignalRow(signal), 'AAPL|LONG|S|HOLD|3|45|2.10');
   });
 
-  it('compact rows are newline-joined', () => {
-    const rows = ['AAPL|LONG|S|HOLD|3|45|2.1', 'NVDA|SHORT|A|HOLD|2|30|3.45'];
-    const compact = rows.join('\n');
-    assert.equal(compact, 'AAPL|LONG|S|HOLD|3|45|2.1\nNVDA|SHORT|A|HOLD|2|30|3.45');
+  it('formatSignalRow formats ATR to 2 decimal places', () => {
+    const signal = {
+      symbol: 'NVDA', direction: 'SHORT', tier: 'A', scenario: 'HOLD',
+      touch_points: 2, ema_bars: 30, atr: 3.456789,
+    };
+    assert.equal(formatSignalRow(signal), 'NVDA|SHORT|A|HOLD|2|30|3.46');
+  });
+
+  it('multiple rows are newline-joined', () => {
+    const signals = [
+      { symbol: 'AAPL', direction: 'LONG', tier: 'S', scenario: 'HOLD', touch_points: 3, ema_bars: 45, atr: 2.1 },
+      { symbol: 'NVDA', direction: 'SHORT', tier: 'A', scenario: 'HOLD', touch_points: 2, ema_bars: 30, atr: 3.45 },
+    ];
+    const compact = signals.map(formatSignalRow).join('\n');
     assert.equal(compact.split('\n').length, 2);
+    assert.ok(compact.startsWith('AAPL|LONG|S|HOLD|3|45|2.10'));
   });
 });

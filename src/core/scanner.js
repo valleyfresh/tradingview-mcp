@@ -129,6 +129,11 @@ function parseLabel(text, symbol) {
   };
 }
 
+/** Format a parsed signal as a compact pipe-delimited row. */
+export function formatSignalRow(s) {
+  return `${s.symbol}|${s.direction}|${s.tier}|${s.scenario}|${s.touch_points}|${s.ema_bars}|${s.atr.toFixed(2)}`;
+}
+
 /**
  * Scan the named watchlist for valid setups.
  *
@@ -215,9 +220,7 @@ export async function runWatchlistScan({
     scanned: symbols.length,
     signals_found: signals.length,
     signals: compact
-      ? signals.map(s =>
-          `${s.symbol}|${s.direction}|${s.tier}|${s.scenario}|${s.touch_points}|${s.ema_bars}|${s.atr}`
-        ).join('\n')
+      ? signals.map(formatSignalRow).join('\n')
       : signals,
     skipped_count: skipped.length,
     error_count: errors.length,

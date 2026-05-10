@@ -32,6 +32,7 @@ export function registerScannerTools(server) {
       compact: z.boolean().optional().describe(
         'If true, return signals as a newline-joined pipe-delimited string ' +
         '(SYMBOL|DIRECTION|TIER|SCENARIO|TOUCHES|EMA_BARS|ATR) instead of an object array. ' +
+        'Note: tier_score is not included in compact output (derive from TIER if needed). ' +
         'Reduces token usage by ~1-2 KB per scan. Default: false.'
       ),
     },
