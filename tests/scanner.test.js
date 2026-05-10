@@ -33,7 +33,7 @@ describe('evaluateChecked()', () => {
 
     await assert.rejects(
       () => evaluateChecked('ignored', 'myLabel', fakeEval),
-      /expected 9999 bytes/
+      /expected 9999 bytes, got \d+/
     );
   });
 });

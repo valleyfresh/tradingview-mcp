@@ -127,7 +127,7 @@ export async function evaluateAsync(expression) {
 export async function evaluateChecked(expression, label = 'evaluate', _eval = evaluate) {
   const wrapped = `(function(){ const d = (${expression}); return { data: d, sz: JSON.stringify(d).length }; })()`;
   const result = await _eval(wrapped);
-  const received = JSON.stringify(result?.data).length;
+  const received = JSON.stringify(result?.data ?? null).length;
   if (result?.sz !== received) {
     throw new Error(`${label}: CDP truncated response (expected ${result.sz} bytes, got ${received})`);
   }
