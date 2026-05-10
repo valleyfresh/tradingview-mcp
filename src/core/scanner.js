@@ -103,7 +103,8 @@ export async function getMarketBias(_fetch = fetchBias) {
   let result;
   try {
     result = await _fetch();
-  } catch {
+  } catch (err) {
+    console.warn('[scanner] getMarketBias failed, defaulting to neutral:', err.message);
     result = 'neutral';
   }
   _biasCache = { value: result, ts: Date.now() };
