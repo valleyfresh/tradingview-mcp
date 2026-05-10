@@ -63,7 +63,7 @@ The scanner needs "Watchlist" visible in the right panel so it can switch to eac
 Call `scanner_run_watchlist` with `watchlist_name="Watchlist"` and `section="STOCKS"`. The `section` parameter reads symbols from the API and filters to only the STOCKS section — MARKETS (indices, ETFs) is excluded automatically.
 
 ```
-scanner_run_watchlist(watchlist_name="Watchlist", section="STOCKS", filter_by_bias=true)
+scanner_run_watchlist(watchlist_name="Watchlist", section="STOCKS", filter_by_bias=false)
 ```
 
 Collect the `signals` array — each entry has `symbol`, `direction`, `tier`, `scenario`.

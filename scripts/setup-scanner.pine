@@ -1,5 +1,5 @@
 //@version=6
-indicator("Swing Setup Scanner", overlay=true, max_labels_count=16, max_lines_count=5, max_boxes_count=4)
+indicator("Swing Setup Scanner", overlay=true, max_labels_count=20, max_lines_count=5, max_boxes_count=4)
 
 // ─── INPUTS ──────────────────────────────────────────────────────────────────
 i_ema_len       = input.int(20,   "EMA Length",             group="EMA", minval=1)
@@ -433,6 +433,37 @@ bool short_watch2 = barstate.islast
               and close > short_tl_now
               and (close - short_tl_now) / short_tl_now <= watch_band
 
+// ─── DEVELOPING SIGNALS (almost-ready) ────────────────────────────────────
+// Fires when all gates pass except span < min or consec < min (non-choppy)
+// Emits S (quality bounce) or A (swing bounce) with scenario=DEV + countdown note
+
+bool long_dev = barstate.islast
+             and long_piv_ok and long_no_wick and long_touches >= i_min_touches and long_bounce_ok
+             and not long_breakout and not na(long_tl_now) and long_tl_now > 0.0
+             and close < long_tl_now and (long_tl_now - close) / long_tl_now <= watch_band
+             and not (long_watch1 or long_watch2)
+             and ((ph1b - ph2b) < i_min_sig_bars
+                  or (long_span_ok and consec_above > 0 and consec_above < i_min_ema_bars and not_choppy))
+
+bool short_dev = barstate.islast
+              and short_piv_ok and short_no_wick and short_touches >= i_min_touches and short_bounce_ok
+              and not short_breakout and not na(short_tl_now) and short_tl_now > 0.0
+              and close > short_tl_now and (close - short_tl_now) / short_tl_now <= watch_band
+              and not (short_watch1 or short_watch2)
+              and ((pl1b - pl2b) < i_min_sig_bars
+                   or (short_span_ok and consec_below > 0 and consec_below < i_min_ema_bars and not_choppy))
+
+int ld_span_to_go   = (long_dev  and (ph1b - ph2b) < i_min_sig_bars)                       ? (i_min_sig_bars - (ph1b - ph2b))  : na
+int ld_consec_to_go = (long_dev  and long_span_ok  and consec_above < i_min_ema_bars)        ? (i_min_ema_bars - consec_above)   : na
+int sd_span_to_go   = (short_dev and (pl1b - pl2b) < i_min_sig_bars)                        ? (i_min_sig_bars - (pl1b - pl2b))  : na
+int sd_consec_to_go = (short_dev and short_span_ok and consec_below < i_min_ema_bars)        ? (i_min_ema_bars - consec_below)   : na
+
+string ld_note = long_dev ? (not na(ld_span_to_go) and not na(ld_consec_to_go) ? str.tostring(ld_span_to_go) + "b span / " + str.tostring(ld_consec_to_go) + "b EMA" : not na(ld_span_to_go) ? str.tostring(ld_span_to_go) + "b to span" : str.tostring(ld_consec_to_go) + "b to EMA") : ""
+string sd_note = short_dev ? (not na(sd_span_to_go) and not na(sd_consec_to_go) ? str.tostring(sd_span_to_go) + "b span / " + str.tostring(sd_consec_to_go) + "b EMA" : not na(sd_span_to_go) ? str.tostring(sd_span_to_go) + "b to span" : str.tostring(sd_consec_to_go) + "b to EMA") : ""
+
+string dev_tier_l = sp_long  ? "S" : "A"
+string dev_tier_s = sp_short ? "S" : "A"
+
 // ─── SCORE + TIER ─────────────────────────────────────────────────────────────
 bool is_long_active  = long_setup  or long_watch1 or long_watch2
 bool is_short_active = short_setup or short_watch1 or short_watch2
@@ -452,7 +483,7 @@ int  active_score  = (score_bounce ? 1 : 0) + (score_pattern ? 1 : 0) + (score_m
 
 bool   is_hold  = long_setup ? long_holding : (short_setup ? short_holding : false)
 string scenario = (long_watch1 or short_watch1 or long_watch2 or short_watch2) ? "WATCH" : is_hold ? "HOLD" : "BO"
-string tier     = not any_signal ? "—" : (long_watch1 or short_watch1) ? "W1" : (long_watch2 or short_watch2) ? "W2" : active_score >= 3 ? "S" : active_score == 2 ? "A" : active_score == 1 ? "B" : "C"
+string tier     = not any_signal ? "—" : (long_watch1 or short_watch1) ? "S" : (long_watch2 or short_watch2) ? "A" : active_score >= 3 ? "S" : active_score == 2 ? "A" : active_score == 1 ? "B" : "C"
 
 // ─── TIER HELPERS ────────────────────────────────────────────────────────────
 tier_bg(t) =>
@@ -528,10 +559,14 @@ if barstate.islast
 // Format: "DIRECTION|TIER|SCENARIO|TOUCHES|EMA_BARS|ATR"
 var label long_lbl    = na
 var label short_lbl   = na
-var label lwatch1_lbl = na
-var label swatch1_lbl = na
-var label lwatch2_lbl = na
-var label swatch2_lbl = na
+var label lwatch1_lbl   = na
+var label swatch1_lbl   = na
+var label lwatch2_lbl   = na
+var label swatch2_lbl   = na
+var label ldev_lbl      = na
+var label sdev_lbl      = na
+var label ldev_note_lbl = na
+var label sdev_note_lbl = na
 
 if long_setup
     string txt = "LONG|" + tier + "|" + scenario + "|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
@@ -546,28 +581,46 @@ if short_setup
          style=label.style_label_up, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
 
 if long_watch1
-    string txt = "LONG|W1|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
+    string txt = "LONG|" + tier + "|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
     label.delete(lwatch1_lbl)
     lwatch1_lbl := label.new(bar_index, high * 1.001, txt,
-         style=label.style_label_down, color=tier_bg("W1"), textcolor=tier_fg("W1"), size=size.small)
+         style=label.style_label_down, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
 
 if short_watch1
-    string txt = "SHORT|W1|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
+    string txt = "SHORT|" + tier + "|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
     label.delete(swatch1_lbl)
     swatch1_lbl := label.new(bar_index, low * 0.999, txt,
-         style=label.style_label_up, color=tier_bg("W1"), textcolor=tier_fg("W1"), size=size.small)
+         style=label.style_label_up, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
 
 if long_watch2
-    string txt = "LONG|W2|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
+    string txt = "LONG|" + tier + "|WATCH|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
     label.delete(lwatch2_lbl)
     lwatch2_lbl := label.new(bar_index, high * 1.001, txt,
-         style=label.style_label_down, color=tier_bg("W2"), textcolor=tier_fg("W2"), size=size.small)
+         style=label.style_label_down, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
 
 if short_watch2
-    string txt = "SHORT|W2|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
+    string txt = "SHORT|" + tier + "|WATCH|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
     label.delete(swatch2_lbl)
     swatch2_lbl := label.new(bar_index, low * 0.999, txt,
-         style=label.style_label_up, color=tier_bg("W2"), textcolor=tier_fg("W2"), size=size.small)
+         style=label.style_label_up, color=tier_bg(tier), textcolor=tier_fg(tier), size=size.small)
+
+if long_dev
+    string txt = "LONG|" + dev_tier_l + "|DEV|" + str.tostring(long_touches) + "|" + str.tostring(consec_above) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(ldev_lbl)
+    ldev_lbl := label.new(bar_index, high * 1.001, txt,
+         style=label.style_label_down, color=tier_bg(dev_tier_l), textcolor=tier_fg(dev_tier_l), size=size.tiny)
+    label.delete(ldev_note_lbl)
+    ldev_note_lbl := label.new(bar_index, low * 0.997, ld_note,
+         style=label.style_label_up, color=color.new(color.gray, 40), textcolor=color.white, size=size.tiny)
+
+if short_dev
+    string txt = "SHORT|" + dev_tier_s + "|DEV|" + str.tostring(short_touches) + "|" + str.tostring(consec_below) + "|" + str.tostring(atr_val, "#.####")
+    label.delete(sdev_lbl)
+    sdev_lbl := label.new(bar_index, low * 0.999, txt,
+         style=label.style_label_up, color=tier_bg(dev_tier_s), textcolor=tier_fg(dev_tier_s), size=size.tiny)
+    label.delete(sdev_note_lbl)
+    sdev_note_lbl := label.new(bar_index, high * 1.003, sd_note,
+         style=label.style_label_down, color=color.new(color.gray, 40), textcolor=color.white, size=size.tiny)
 
 // ─── PLOTS ───────────────────────────────────────────────────────────────────
 plot(ema_plot, "Daily EMA 20", color=color.new(color.blue, 0), linewidth=1)
@@ -591,7 +644,7 @@ if barstate.islast
         color  c_det        = color.new(color.gray,  70)
         color  hdr_bg       = any_signal ? tier_bg(tier) : color.new(color.gray, 60)
         color  hdr_fg       = any_signal ? tier_fg(tier) : color.white
-        bool   is_watch_tbl = long_watch1 or short_watch1 or long_watch2 or short_watch2
+        bool   is_watch_tbl = long_watch1 or short_watch1 or long_watch2 or short_watch2 or long_dev or short_dev
         int    b_ago        = is_long_tbl ? long_breakout_ago : short_breakout_ago
         bool   c_break      = is_long_tbl ? long_breakout : short_breakout
         string d_break      = is_watch_tbl ? "—" : not c_break ? "—" : (na(b_ago) or b_ago == 0) ? "now" : str.tostring(b_ago) + "b"

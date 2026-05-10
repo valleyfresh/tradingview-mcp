@@ -124,7 +124,7 @@ export async function runWatchlistScan({
   watchlist_name = 'SMA list',
   section = null,
   timeframe = '60',
-  filter_by_bias = true,
+  filter_by_bias = false,
   delay_ms = 2000,
 } = {}) {
   // 1. Get watchlist symbols — via API section filter or DOM fallback
