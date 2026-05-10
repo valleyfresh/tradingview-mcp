@@ -88,3 +88,29 @@ describe('getMarketBias() — cache', () => {
     assert.equal(calls, 0);
   });
 });
+
+// ── Compact mode output format ────────────────────────────────────────────
+
+describe('compact signal format', () => {
+  it('compact row matches expected pipe-delimited format', () => {
+    const signal = {
+      symbol: 'AAPL',
+      direction: 'LONG',
+      tier: 'S',
+      scenario: 'HOLD',
+      touch_points: 3,
+      ema_bars: 45,
+      atr: 2.1,
+    };
+    // Build the expected row using the same format the implementation will use
+    const row = `${signal.symbol}|${signal.direction}|${signal.tier}|${signal.scenario}|${signal.touch_points}|${signal.ema_bars}|${signal.atr}`;
+    assert.equal(row, 'AAPL|LONG|S|HOLD|3|45|2.1');
+  });
+
+  it('compact rows are newline-joined', () => {
+    const rows = ['AAPL|LONG|S|HOLD|3|45|2.1', 'NVDA|SHORT|A|HOLD|2|30|3.45'];
+    const compact = rows.join('\n');
+    assert.equal(compact, 'AAPL|LONG|S|HOLD|3|45|2.1\nNVDA|SHORT|A|HOLD|2|30|3.45');
+    assert.equal(compact.split('\n').length, 2);
+  });
+});

@@ -29,8 +29,13 @@ export function registerScannerTools(server) {
         'Milliseconds to wait per symbol after chart loads (default: 2000). ' +
         'Increase if signals are missing due to slow rendering.'
       ),
+      compact: z.boolean().optional().describe(
+        'If true, return signals as a newline-joined pipe-delimited string ' +
+        '(SYMBOL|DIRECTION|TIER|SCENARIO|TOUCHES|EMA_BARS|ATR) instead of an object array. ' +
+        'Reduces token usage by ~1-2 KB per scan. Default: false.'
+      ),
     },
-    async ({ watchlist_name, section, timeframe, filter_by_bias, delay_ms }) => {
+    async ({ watchlist_name, section, timeframe, filter_by_bias, delay_ms, compact }) => {
       try {
         return jsonResult(await core.runWatchlistScan({
           watchlist_name,
@@ -38,6 +43,7 @@ export function registerScannerTools(server) {
           timeframe,
           filter_by_bias,
           delay_ms,
+          compact,
         }));
       } catch (err) {
         return jsonResult({ success: false, error: err.message }, true);

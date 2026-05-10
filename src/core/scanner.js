@@ -137,6 +137,7 @@ function parseLabel(text, symbol) {
  * @param {string} [opts.timeframe]        Chart timeframe (default "60" = 1h)
  * @param {boolean} [opts.filter_by_bias]  If true, only return signals matching SPY direction
  * @param {number}  [opts.delay_ms]        Per-symbol delay in ms (default 2000)
+ * @param {boolean} [opts.compact]         If true, return signals as newline-joined pipe-delimited string
  */
 export async function runWatchlistScan({
   watchlist_name = 'SMA list',
@@ -144,6 +145,7 @@ export async function runWatchlistScan({
   timeframe = '60',
   filter_by_bias = false,
   delay_ms = 2000,
+  compact = false,
 } = {}) {
   // 1. Get watchlist symbols — via API section filter or DOM fallback
   let symbols;
@@ -212,7 +214,11 @@ export async function runWatchlistScan({
     market_bias,
     scanned: symbols.length,
     signals_found: signals.length,
-    signals,
+    signals: compact
+      ? signals.map(s =>
+          `${s.symbol}|${s.direction}|${s.tier}|${s.scenario}|${s.touch_points}|${s.ema_bars}|${s.atr}`
+        ).join('\n')
+      : signals,
     skipped_count: skipped.length,
     error_count: errors.length,
     errors: errors.length > 0 ? errors : undefined,
