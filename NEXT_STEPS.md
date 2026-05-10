@@ -1,85 +1,77 @@
-# Session Handover — 2026-05-09
+# Session Handover — 2026-05-10
 
 ## What was completed this session
 
-### 1. S/A/B/C/W tier scoring system (new)
-Complete replacement of the A/B grade system:
+### 1. W1/W2 WATCH tier split (Pine Script)
+- **W1** (orange label): approaching trendline + quality bounce (hammer/engulf)
+- **W2** (blue label): approaching trendline + basic swing-low bounce
+- `sp_long`/`sp_short` moved before WATCH block (Pine ordering requirement)
+- `tier_bg()` switch, 6 label vars, single-line tier ternary — all compiled clean
 
-- **S** (score ≥3): gold label — best quality BO
-- **A** (score 2): lime label
-- **B** (score 1): green label
-- **C** (score 0): teal label
-- **W** (Watch): blue label — pre-breakout, approaching trendline
+### 2. scanner.js fixes
+- Fixed 6-field label parser: `direction|tier|scenario|touches|ema_bars|atr`
+- `TIER_SCORE = { S:4, A:3, B:2, W1:2, C:1, W2:1 }`
+- Added `section` param to `runWatchlistScan` — reads API, filters to named section only
+- **Critical bug fixed**: section filtering now runs inside `evaluate()` to prevent CDP response truncation (was silently cutting off after symbol 34/80)
 
-Score components (0–4):
-1. EMA bounce detected (`long_bounce_ok`)
-2. Quality candle pattern (hammer / engulf)
-3. BO candle momentum (body ≥60% of range)
-4. BO candle volume (>1.2× 5-bar avg)
+### 3. Skills
+- `skills/swing-watchlist/SKILL.md` — routes S/A signals into 4-section "Swing" watchlist
+- `skills/flag-watchlist/` — deleted (replaced by watchlist routing)
+- CLAUDE.md updated
 
-### 2. WATCH signal (new)
-Fires when all structural conditions are met (EMA trend, trendline valid, span ok, no wicks, 2+ touches, EMA bounce) but no breakout yet and price is within `i_watch_pct`% (default 3%) of the current trendline value. Blue flag label, W tier in table.
+### 4. TradingView watchlist API (discovered)
+- `GET  /api/v1/symbols_list/all/` → all custom watchlists
+- `GET  /api/v1/symbols_list/custom/{id}/` → single watchlist
+- `POST /api/v1/symbols_list/custom/{id}/append/?source=web-tvd` → add symbols
+- `POST /api/v1/symbols_list/custom/{id}/remove/?source=web-tvd` → remove symbols
+- Swing watchlist ID: `330412486` | Scan source (Watchlist) ID: `64693096`
+- Section format: `###NAME` strings with U+2064 invisible char — strip with `/[^\x20-\x7E]/g`
 
-### 3. ATH / PDH flags (new)
-Informational only — displayed in row 6 of the table:
-- **★ ATH**: `close >= daily_high_52w * 0.95` (52-week high via `request.security("D", ta.highest(high, 252))`)
-- **★ PDH**: within 1% of `high[1]` on daily
+### 5. Scan run
+- 80 STOCKS symbols scanned, market_bias=long, 0 signals (market recovering)
+- Swing watchlist rebuilt to empty sections (correct)
 
-### 4. Slope lift (new)
-Before the breakout scan, weak bearish closes ≤0.5% above the trendline are treated as touches (not breakouts) — slope is raised to clear them. Prevents false breakout flags on shallow red bars that barely crossed the line.
-
-### 5. Fixed 7-row table
-Eliminates the old dynamic-row-count bug. Table always has exactly 7 rows:
-- Row 0: direction | score | tier + scenario (BO/HOLD/WATCH)
-- Row 1: Bounce EMA ✓/✗
-- Row 2: Pattern ✓/✗ (hammer/engulf/star/—)
-- Row 3: BO Candle ✓/✗ (gray for WATCH)
-- Row 4: Volume ✓/✗ (gray for WATCH)
-- Row 5: Momentum ✓/✗ (gray for WATCH)
-- Row 6: Flags (★ ATH, ★ PDH, or blank)
-
-### 6. Pine v6 multi-line ternary discovery (documented in GOTCHAS.md)
-Multi-line ternaries fail at global scope for string/color types. Safe alternatives:
-- Single-line ternary for bool/int
-- `switch` statement for color-returning functions
-- Split complex conditions into named booleans before composing
-
-### 7. Committed
-`git commit 598fc59` — "feat: add S/A/B/C/W tier scoring system + WATCH signals + ATH/PDH flags"
+### 6. Commits (all on main)
+- `fb978d5` — W1/W2 + swing-watchlist skill
+- `4c44d0a` — replace flag-watchlist with swing-watchlist
+- `e3de54b` — section filter on scanner
+- `f301dc5` — fix evaluate() truncation bug
 
 ---
 
-## Verified on chart
-AAPL 1h:
-- Green trendline (breakout state, 20 bars ago)
-- Lime green B box on bounce candle
-- Orange BO box on breakout candle
-- 7-row table with **Flags row: ★ATH ★PDH** (AAPL near 52-week high and prior-day high)
-- Gray table header (no active signal — BO was 20 bars ago, not within hold window)
+## Token / Context Improvement Ideas (for next session)
+
+Ranked by effort vs. impact:
+
+| # | Idea | Effort | Impact |
+|---|------|--------|--------|
+| 3 | SPY bias cache (15-min TTL in module scope) | 15 min | Saves ~5s + 2 tool calls per scan |
+| 1 | Scanner compact mode (`compact: true` flag, pipe-delimited signals) | 30 min | Saves 2-3 KB per scan response |
+| 2 | `evaluate()` size guard (detect truncation, raise error) | 20 min | Prevents silent data loss |
+| 5 | `session-end` skill (auto-writes NEXT_STEPS.md + memory) | 30 min | Saves handover time |
+| 6 | Pine inject skip-if-current (version comment hash check) | 20 min | Saves ~35 KB on Pine sessions |
+| 4 | Scan result persistence (JSON cache with TTL) | 1 hr | Saves full re-scan on repeat runs |
+
+**Recommended starting point for next session:** #3 + #1 (both fast, meaningful reduction).
 
 ---
 
-## Pending work
+## Next Session Priorities
 
-1. **Live WATCH signal verification** — switch to a ticker approaching its trendline without a breakout; confirm blue W label fires and table shows WATCH scenario.
-
-2. **Live regression with active setup** — `long-setup-logic` / `short-setup-logic` TDD tests currently vacuously pass (no setups at scan time). Re-run with real label/box/EMA data when a watchlist ticker fires.
-
-3. **Run scanner_run_watchlist** — count signals with new tier system, verify `LONG|S|BO|3|45|0.87` label format is emitted, check tier distribution across watchlist.
-
-4. **More TDD test cases** — candidates:
-   - `watch-signal` — WATCH label fires when within 3% of trendline
-   - `tier-colors` — S/A/B/C labels are correct colors (screenshot-based)
-   - `ath-flag` — Flags row shows ★ATH for stocks near 52-week high
-   - `slope-lift` — weak red close above trendline doesn't trigger breakout
-
-5. **Morning brief end-to-end** — still pending.
-
-6. **openclaw server migration** — still pending.
+1. Run `tv_health_check` → `tv-connect` skill if fails
+2. Switch TradingView to "Watchlist" (STOCKS section visible), confirm "Swing Setup Scanner" on 1h chart
+3. Run swing-watchlist skill end-to-end (market should have more setups mid-week)
+4. Verify W1/W2 labels fire on a live ticker approaching its trendline (IBKR is a candidate — had bounce box last session)
+5. Implement 1-2 token efficiency improvements from the table above
+6. Morning brief end-to-end (still pending)
 
 ---
 
-## Session checklist
-1. `tv_health_check` — if fails, invoke `tv-connect` skill
-2. Confirm "Swing Setup Scanner" loaded on 1h chart
-3. Read `GOTCHAS.md` before any Pine Script edits
+## Session Checklist
+
+1. `tv_health_check` → if fails, `tv-connect` skill
+2. Switch right panel to "Watchlist" (not "Swing")
+3. Confirm "Swing Setup Scanner" indicator visible on 1h chart
+4. `scanner_run_watchlist(watchlist_name="Watchlist", section="STOCKS", filter_by_bias=true)`
+5. If signals → rebuild Swing watchlist via `ui_evaluate` (see swing-watchlist skill)
+6. Read `GOTCHAS.md` before any Pine edits
